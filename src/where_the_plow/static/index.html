@@ -216,6 +216,13 @@
       zoom: 12,
     });
 
+    const geolocate = new maplibregl.GeolocateControl({
+      positionOptions: { enableHighAccuracy: true },
+      trackUserLocation: true,
+      showUserHeading: true,
+    });
+    map.addControl(geolocate, 'bottom-right');
+
     function formatTimestamp(ts) {
       const d = new Date(ts);
       return d.toLocaleString(undefined, {
