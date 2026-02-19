@@ -22,7 +22,7 @@
       position: absolute;
       top: 12px;
       right: 12px;
-      background: rgba(20, 20, 30, 0.85);
+      background: rgba(20, 20, 30, 0.65);
       color: #e5e7eb;
       padding: 14px 18px;
       border-radius: 8px;
@@ -172,6 +172,79 @@
     #coverage-view-toggle button:hover:not(.active) {
       background: rgba(255,255,255,0.05);
     }
+    #legend {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255,255,255,0.1);
+    }
+    #legend-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    #legend-header .legend-title {
+      margin-bottom: 0;
+    }
+    #legend-toggle {
+      background: none;
+      border: none;
+      color: #9ca3af;
+      cursor: pointer;
+      padding: 0;
+      font-size: 0.75rem;
+      line-height: 1;
+      transition: color 0.15s, transform 0.2s;
+      display: flex;
+      align-items: center;
+    }
+    #legend-toggle:hover {
+      color: #e5e7eb;
+    }
+    #legend-toggle.collapsed {
+      transform: rotate(-180deg);
+    }
+    #legend-body {
+      overflow: hidden;
+      transition: opacity 0.2s;
+    }
+    #legend-body.collapsed {
+      display: none;
+    }
+    .legend-title {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #9ca3af;
+      margin-bottom: 6px;
+    }
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 0.78rem;
+      color: #e5e7eb;
+      margin-bottom: 4px;
+    }
+    .legend-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .legend-gradient {
+      height: 10px;
+      border-radius: 4px;
+      background: linear-gradient(to right,
+        #2563eb, #60a5fa, #fbbf24, #f97316, #ef4444);
+      margin-bottom: 3px;
+    }
+    .legend-gradient-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.72rem;
+      color: #9ca3af;
+    }
   </style>
 </head>
 <body>
@@ -202,6 +275,26 @@
       <span id="slider-label"></span>
       <input type="range" id="time-slider" min="0" max="1000" value="1000" />
       <div id="coverage-loading">Loading coverage data...</div>
+    </div>
+    <div id="legend">
+      <div id="legend-header">
+        <div class="legend-title">Legend</div>
+        <button id="legend-toggle" title="Collapse legend">&#9650;</button>
+      </div>
+      <div id="legend-body">
+        <div id="legend-vehicles">
+          <div class="legend-row"><span class="legend-swatch" style="background:#2563eb"></span>Plow truck</div>
+          <div class="legend-row"><span class="legend-swatch" style="background:#ea580c"></span>Loader</div>
+          <div class="legend-row"><span class="legend-swatch" style="background:#16a34a"></span>Grader</div>
+          <div class="legend-row"><span class="legend-swatch" style="background:#6b7280"></span>Other</div>
+        </div>
+        <div id="legend-heatmap" style="display:none">
+          <div class="legend-gradient"></div>
+          <div class="legend-gradient-labels">
+            <span>Low</span><span>High</span>
+          </div>
+        </div>
+      </div>
     </div>
     <div id="panel-footer">
       Data from <a href="https://map.stjohns.ca/avl/" target="_blank" rel="noopener">City of St. John's AVL</a><br>
@@ -302,11 +395,24 @@
     btnLines.addEventListener('click', () => switchCoverageView('lines'));
     btnHeatmap.addEventListener('click', () => switchCoverageView('heatmap'));
 
+    function showLegend(type) {
+      document.getElementById('legend-vehicles').style.display = type === 'vehicles' ? '' : 'none';
+      document.getElementById('legend-heatmap').style.display  = type === 'heatmap'  ? '' : 'none';
+    }
+
+    const legendToggleBtn = document.getElementById('legend-toggle');
+    const legendBody = document.getElementById('legend-body');
+    legendToggleBtn.addEventListener('click', () => {
+      const collapsed = legendBody.classList.toggle('collapsed');
+      legendToggleBtn.classList.toggle('collapsed', collapsed);
+    });
+
     function switchCoverageView(view) {
       if (view === coverageView) return;
       coverageView = view;
       btnLines.classList.toggle('active', view === 'lines');
       btnHeatmap.classList.toggle('active', view === 'heatmap');
+      showLegend(view === 'heatmap' ? 'heatmap' : 'vehicles');
       renderCoverage(parseInt(timeSlider.value));
     }
 
@@ -511,6 +617,7 @@
       }
       document.getElementById('vehicle-count').style.display = '';
       document.getElementById('db-size').style.display = '';
+      showLegend('vehicles');
       startAutoRefresh();
     }
 
@@ -520,6 +627,7 @@
       coverageView = 'lines';
       btnLines.classList.add('active');
       btnHeatmap.classList.remove('active');
+      showLegend('vehicles');
       if (map.getLayer('vehicle-circles')) {
         map.setLayoutProperty('vehicle-circles', 'visibility', 'none');
       }
