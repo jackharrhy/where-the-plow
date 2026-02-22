@@ -1,963 +1,1302 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Where the Plow</title>
-  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css" />
-  <script src="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.js"></script>
-  <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-    }
-    #map {
-      width: 100%;
-      height: 100%;
-    }
-    #info-panel {
-      position: absolute;
-      top: 12px;
-      right: 12px;
-      background: rgba(20, 20, 30, 0.65);
-      color: #e5e7eb;
-      padding: 14px 18px;
-      border-radius: 8px;
-      font-family: system-ui, -apple-system, sans-serif;
-      font-size: 13px;
-      line-height: 1.5;
-      z-index: 10;
-      min-width: 180px;
-      backdrop-filter: blur(6px);
-      transition: transform 0.3s ease;
-    }
-    #info-panel.collapsed {
-      transform: translateX(calc(100% + 12px));
-    }
-    @media (max-width: 768px) {
-      #info-panel {
-        max-width: 240px;
-        font-size: 12px;
-        padding: 12px 14px;
-        top: 8px;
-        right: 8px;
-      }
-      #info-panel h3 {
-        font-size: 14px;
-      }
-    }
-    #info-panel h3 {
-      margin: 0 0 6px 0;
-      font-size: 15px;
-      color: #f9fafb;
-    }
-    #info-panel a {
-      color: #93c5fd;
-      text-decoration: none;
-    }
-    #info-panel a:hover {
-      text-decoration: underline;
-    }
-    #vehicle-count {
-      color: #9ca3af;
-      font-size: 12px;
-      margin-top: 6px;
-    }
-    #db-size {
-      color: #9ca3af;
-      font-size: 12px;
-    }
-    #vehicle-detail {
-      margin-top: 10px;
-      padding-top: 10px;
-      border-top: 1px solid rgba(255,255,255,0.12);
-      display: none;
-    }
-    #vehicle-detail .detail-name {
-      font-weight: 600;
-      color: #f9fafb;
-      margin-bottom: 2px;
-    }
-    #vehicle-detail .detail-row {
-      color: #9ca3af;
-      font-size: 12px;
-    }
-    #vehicle-detail .detail-close {
-      float: right;
-      cursor: pointer;
-      color: #6b7280;
-      font-size: 16px;
-      line-height: 1;
-      margin: -2px -4px 0 8px;
-    }
-    #vehicle-detail .detail-close:hover {
-      color: #e5e7eb;
-    }
-    #mode-toggle {
-      display: flex;
-      margin: 8px 0;
-      border-radius: 4px;
-      overflow: hidden;
-      border: 1px solid rgba(255,255,255,0.15);
-    }
-    #mode-toggle button {
-      flex: 1;
-      padding: 5px 0;
-      border: none;
-      background: transparent;
-      color: #9ca3af;
-      font-family: system-ui, -apple-system, sans-serif;
-      font-size: 12px;
-      cursor: pointer;
-      transition: background 0.15s, color 0.15s;
-    }
-    #mode-toggle button.active {
-      background: rgba(96, 165, 250, 0.25);
-      color: #f9fafb;
-    }
-    #mode-toggle button:hover:not(.active) {
-      background: rgba(255,255,255,0.05);
-    }
-    #coverage-panel {
-      display: none;
-      margin-top: 10px;
-      padding-top: 10px;
-      border-top: 1px solid rgba(255,255,255,0.12);
-    }
-    #coverage-panel label {
-      color: #9ca3af;
-      font-size: 12px;
-    }
-    #time-slider {
-      width: 100%;
-      margin: 6px 0;
-      accent-color: #60a5fa;
-    }
-    #slider-label {
-      color: #f9fafb;
-      font-size: 12px;
-      text-align: center;
-      display: block;
-    }
-    #coverage-loading {
-      color: #9ca3af;
-      font-size: 12px;
-      display: none;
-    }
-    #panel-footer {
-      margin-top: 10px;
-      padding-top: 10px;
-      border-top: 1px solid rgba(255,255,255,0.12);
-      font-size: 11px;
-      color: #6b7280;
-      line-height: 1.6;
-    }
-    #panel-footer a {
-      color: #9ca3af;
-      text-decoration: none;
-    }
-    #panel-footer a:hover {
-      color: #e5e7eb;
-      text-decoration: underline;
-    }
-    #coverage-view-toggle {
-      display: flex;
-      margin: 6px 0;
-      border-radius: 4px;
-      overflow: hidden;
-      border: 1px solid rgba(255,255,255,0.12);
-    }
-    #coverage-view-toggle button {
-      flex: 1;
-      padding: 4px 0;
-      border: none;
-      background: transparent;
-      color: #9ca3af;
-      font-family: system-ui, -apple-system, sans-serif;
-      font-size: 11px;
-      cursor: pointer;
-      transition: background 0.15s, color 0.15s;
-    }
-    #coverage-view-toggle button.active {
-      background: rgba(96, 165, 250, 0.25);
-      color: #f9fafb;
-    }
-    #coverage-view-toggle button:hover:not(.active) {
-      background: rgba(255,255,255,0.05);
-    }
-    #legend {
-      margin-top: 12px;
-      padding-top: 10px;
-      border-top: 1px solid rgba(255,255,255,0.1);
-    }
-    #legend-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 6px;
-    }
-    #legend-header .legend-title {
-      margin-bottom: 0;
-    }
-    #legend-toggle {
-      background: none;
-      border: none;
-      color: #9ca3af;
-      cursor: pointer;
-      padding: 0;
-      font-size: 0.75rem;
-      line-height: 1;
-      transition: color 0.15s, transform 0.2s;
-      display: flex;
-      align-items: center;
-    }
-    #legend-toggle:hover {
-      color: #e5e7eb;
-    }
-    #legend-toggle.collapsed {
-      transform: rotate(-180deg);
-    }
-    #legend-body {
-      overflow: hidden;
-      transition: opacity 0.2s;
-    }
-    #legend-body.collapsed {
-      display: none;
-    }
-    .legend-title {
-      font-size: 0.7rem;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: #9ca3af;
-      margin-bottom: 6px;
-    }
-    .legend-row {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      font-size: 0.78rem;
-      color: #e5e7eb;
-      margin-bottom: 4px;
-    }
-    .legend-swatch {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-    .legend-gradient {
-      height: 10px;
-      border-radius: 4px;
-      background: linear-gradient(to right,
-        #2563eb, #60a5fa, #fbbf24, #f97316, #ef4444);
-      margin-bottom: 3px;
-    }
-    .legend-gradient-labels {
-      display: flex;
-      justify-content: space-between;
-      font-size: 0.72rem;
-      color: #9ca3af;
-    }
-    #panel-toggle {
-      position: absolute;
-      top: 12px;
-      right: 12px;
-      background: rgba(20, 20, 30, 0.85);
-      color: #e5e7eb;
-      border: 1px solid rgba(255,255,255,0.2);
-      border-radius: 6px;
-      width: 40px;
-      height: 40px;
-      cursor: pointer;
-      z-index: 9;
-      backdrop-filter: blur(6px);
-      font-size: 20px;
-      line-height: 1;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.2s;
-    }
-    #panel-toggle:hover {
-      background: rgba(30, 30, 40, 0.95);
-      border-color: rgba(255,255,255,0.3);
-    }
-    #panel-toggle:active {
-      transform: scale(0.95);
-    }
-    #panel-toggle.visible {
-      display: flex;
-    }
-    @media (max-width: 768px) {
-      #panel-toggle {
-        top: 8px;
-        right: 8px;
-        width: 36px;
-        height: 36px;
-        font-size: 18px;
-      }
-    }
-  </style>
-</head>
-<body>
-  <div id="map"></div>
-  <button id="panel-toggle" title="Toggle info panel">☰</button>
-  <div id="info-panel">
-    <h3>Where the Plow</h3>
-    <a href="/docs">API Documentation</a>
-    <div id="mode-toggle">
-      <button id="btn-realtime" class="active">Realtime</button>
-      <button id="btn-coverage">Coverage</button>
-    </div>
-    <div id="vehicle-count">Loading vehicles...</div>
-    <div id="db-size"></div>
-    <div id="vehicle-detail">
-      <span class="detail-close" id="detail-close">&times;</span>
-      <div class="detail-name" id="detail-name"></div>
-      <div class="detail-row" id="detail-type"></div>
-      <div class="detail-row" id="detail-speed"></div>
-      <div class="detail-row" id="detail-bearing"></div>
-      <div class="detail-row" id="detail-updated"></div>
-    </div>
-    <div id="coverage-panel">
-      <div id="coverage-view-toggle">
-        <button id="btn-lines" class="active">Lines</button>
-        <button id="btn-heatmap">Heatmap</button>
-      </div>
-      <label>Up to:</label>
-      <span id="slider-label"></span>
-      <input type="range" id="time-slider" min="0" max="1000" value="1000" />
-      <div id="coverage-loading">Loading coverage data...</div>
-    </div>
-    <div id="legend">
-      <div id="legend-header">
-        <div class="legend-title">Legend</div>
-        <button id="legend-toggle" title="Collapse legend">&#9650;</button>
-      </div>
-      <div id="legend-body">
-        <div id="legend-vehicles">
-          <div class="legend-row"><span class="legend-swatch" style="background:#2563eb"></span>Plow truck</div>
-          <div class="legend-row"><span class="legend-swatch" style="background:#ea580c"></span>Loader</div>
-          <div class="legend-row"><span class="legend-swatch" style="background:#16a34a"></span>Grader</div>
-          <div class="legend-row"><span class="legend-swatch" style="background:#6b7280"></span>Other</div>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Where the Plow</title>
+        <link
+            rel="stylesheet"
+            href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css"
+        />
+        <script src="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.js"></script>
+        <style>
+            html,
+            body {
+                margin: 0;
+                padding: 0;
+                width: 100%;
+                height: 100%;
+                overflow: hidden;
+            }
+            #map {
+                width: 100%;
+                height: 100%;
+            }
+            #info-panel {
+                position: absolute;
+                top: 12px;
+                right: 12px;
+                background: rgba(20, 20, 30, 0.85);
+                color: #e5e7eb;
+                padding: 14px 18px;
+                border-radius: 8px;
+                font-family:
+                    system-ui,
+                    -apple-system,
+                    sans-serif;
+                font-size: 13px;
+                line-height: 1.5;
+                z-index: 10;
+                min-width: 180px;
+                backdrop-filter: blur(6px);
+            }
+            @media (max-width: 768px) {
+                #info-panel {
+                    max-width: 240px;
+                    font-size: 12px;
+                    padding: 12px 14px;
+                    top: 8px;
+                    right: 8px;
+                }
+                #info-panel h3 {
+                    font-size: 14px;
+                }
+            }
+            #info-panel h3 {
+                margin: 0 0 6px 0;
+                font-size: 15px;
+                color: #f9fafb;
+            }
+            #info-panel a {
+                color: #93c5fd;
+                text-decoration: none;
+            }
+            #info-panel a:hover {
+                text-decoration: underline;
+            }
+            #vehicle-count {
+                color: #d1d5db;
+                font-size: 12px;
+                margin-top: 6px;
+            }
+            #db-size {
+                color: #d1d5db;
+                font-size: 12px;
+            }
+            #vehicle-detail {
+                margin-top: 10px;
+                padding-top: 10px;
+                border-top: 1px solid rgba(255, 255, 255, 0.12);
+                display: none;
+            }
+            #vehicle-detail .detail-name {
+                font-weight: 600;
+                color: #f9fafb;
+                margin-bottom: 2px;
+            }
+            #vehicle-detail .detail-row {
+                color: #d1d5db;
+                font-size: 12px;
+            }
+            #vehicle-detail .detail-close {
+                float: right;
+                cursor: pointer;
+                color: #9ca3af;
+                font-size: 16px;
+                line-height: 1;
+                margin: -2px -4px 0 8px;
+            }
+            #vehicle-detail .detail-close:hover {
+                color: #e5e7eb;
+            }
+            #mode-toggle {
+                display: flex;
+                margin: 8px 0;
+                border-radius: 4px;
+                overflow: hidden;
+                border: 1px solid rgba(255, 255, 255, 0.15);
+            }
+            #mode-toggle button {
+                flex: 1;
+                padding: 5px 0;
+                border: none;
+                background: transparent;
+                color: #d1d5db;
+                font-family:
+                    system-ui,
+                    -apple-system,
+                    sans-serif;
+                font-size: 12px;
+                cursor: pointer;
+                transition:
+                    background 0.15s,
+                    color 0.15s;
+            }
+            #mode-toggle button.active {
+                background: rgba(96, 165, 250, 0.25);
+                color: #f9fafb;
+            }
+            #mode-toggle button:hover:not(.active) {
+                background: rgba(255, 255, 255, 0.05);
+            }
+            #coverage-panel {
+                display: none;
+                margin-top: 10px;
+                padding-top: 10px;
+                border-top: 1px solid rgba(255, 255, 255, 0.12);
+            }
+            #coverage-panel label {
+                color: #d1d5db;
+                font-size: 12px;
+            }
+            #time-range-presets {
+                display: flex;
+                margin: 6px 0;
+                border-radius: 4px;
+                overflow: hidden;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+            }
+            #time-range-presets button {
+                flex: 1;
+                padding: 4px 0;
+                border: none;
+                background: transparent;
+                color: #d1d5db;
+                font-family:
+                    system-ui,
+                    -apple-system,
+                    sans-serif;
+                font-size: 11px;
+                cursor: pointer;
+                transition:
+                    background 0.15s,
+                    color 0.15s;
+            }
+            #time-range-presets button.active {
+                background: rgba(96, 165, 250, 0.25);
+                color: #f9fafb;
+            }
+            #time-range-presets button:hover:not(.active) {
+                background: rgba(255, 255, 255, 0.05);
+            }
+            #date-picker-row {
+                display: none;
+                margin: 6px 0;
+            }
+            #date-picker-row.visible {
+                display: block;
+            }
+            #coverage-date {
+                width: 100%;
+                padding: 4px 6px;
+                border-radius: 4px;
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                background: rgba(255, 255, 255, 0.08);
+                color: #f9fafb;
+                font-family:
+                    system-ui,
+                    -apple-system,
+                    sans-serif;
+                font-size: 12px;
+                color-scheme: dark;
+            }
+            #coverage-range-label {
+                color: #d1d5db;
+                font-size: 11px;
+                margin: 6px 0;
+                line-height: 1.4;
+            }
+            #time-slider {
+                width: 100%;
+                margin: 6px 0;
+                accent-color: #60a5fa;
+            }
+            #slider-label {
+                color: #f9fafb;
+                font-size: 12px;
+                text-align: center;
+                display: block;
+            }
+            #coverage-loading {
+                color: #d1d5db;
+                font-size: 12px;
+                display: none;
+            }
+            #panel-footer {
+                margin-top: 10px;
+                padding-top: 10px;
+                border-top: 1px solid rgba(255, 255, 255, 0.12);
+                font-size: 11px;
+                color: #d1d5db;
+                line-height: 1.6;
+            }
+            #panel-footer a {
+                color: #93c5fd;
+                text-decoration: none;
+            }
+            #panel-footer a:hover {
+                color: #bfdbfe;
+                text-decoration: underline;
+            }
+            #coverage-view-toggle {
+                display: flex;
+                margin: 6px 0;
+                border-radius: 4px;
+                overflow: hidden;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+            }
+            #coverage-view-toggle button {
+                flex: 1;
+                padding: 4px 0;
+                border: none;
+                background: transparent;
+                color: #d1d5db;
+                font-family:
+                    system-ui,
+                    -apple-system,
+                    sans-serif;
+                font-size: 11px;
+                cursor: pointer;
+                transition:
+                    background 0.15s,
+                    color 0.15s;
+            }
+            #coverage-view-toggle button.active {
+                background: rgba(96, 165, 250, 0.25);
+                color: #f9fafb;
+            }
+            #coverage-view-toggle button:hover:not(.active) {
+                background: rgba(255, 255, 255, 0.05);
+            }
+            #legend {
+                margin-top: 12px;
+                padding-top: 10px;
+                border-top: 1px solid rgba(255, 255, 255, 0.1);
+            }
+            #legend-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 6px;
+            }
+            #legend-header .legend-title {
+                margin-bottom: 0;
+            }
+            #legend-toggle {
+                background: none;
+                border: none;
+                color: #d1d5db;
+                cursor: pointer;
+                padding: 0;
+                font-size: 0.75rem;
+                line-height: 1;
+                transition:
+                    color 0.15s,
+                    transform 0.2s;
+                display: flex;
+                align-items: center;
+            }
+            #legend-toggle:hover {
+                color: #e5e7eb;
+            }
+            #legend-toggle.collapsed {
+                transform: rotate(-180deg);
+            }
+            #legend-body {
+                overflow: hidden;
+                transition: opacity 0.2s;
+            }
+            #legend-body.collapsed {
+                display: none;
+            }
+            .legend-title {
+                font-size: 0.7rem;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                color: #d1d5db;
+                margin-bottom: 6px;
+            }
+            .legend-row {
+                display: flex;
+                align-items: center;
+                gap: 7px;
+                font-size: 0.78rem;
+                color: #e5e7eb;
+                margin-bottom: 4px;
+            }
+            .legend-swatch {
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                flex-shrink: 0;
+            }
+            .legend-gradient {
+                height: 10px;
+                border-radius: 4px;
+                background: linear-gradient(
+                    to right,
+                    #2563eb,
+                    #60a5fa,
+                    #fbbf24,
+                    #f97316,
+                    #ef4444
+                );
+                margin-bottom: 3px;
+            }
+            .legend-gradient-labels {
+                display: flex;
+                justify-content: space-between;
+                font-size: 0.72rem;
+                color: #d1d5db;
+            }
+            #panel-toggle {
+                position: absolute;
+                top: 12px;
+                right: 12px;
+                background: rgba(20, 20, 30, 0.85);
+                color: #e5e7eb;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 6px;
+                width: 40px;
+                height: 40px;
+                cursor: pointer;
+                z-index: 11;
+                backdrop-filter: blur(6px);
+                font-size: 20px;
+                line-height: 1;
+                display: none;
+                align-items: center;
+                justify-content: center;
+                transition: all 0.2s;
+            }
+            #panel-toggle:hover {
+                background: rgba(30, 30, 40, 0.95);
+                border-color: rgba(255, 255, 255, 0.3);
+            }
+            #panel-toggle:active {
+                transform: scale(0.95);
+            }
+            @media (max-width: 768px) {
+                #panel-toggle {
+                    display: flex;
+                    top: 16px;
+                    right: 16px;
+                    width: 36px;
+                    height: 36px;
+                    font-size: 18px;
+                }
+                #info-panel {
+                    display: none;
+                }
+                #info-panel.open {
+                    display: block;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div id="map"></div>
+        <button id="panel-toggle" title="Toggle info panel">☰</button>
+        <div id="info-panel">
+            <h3>Where the Plow</h3>
+            <div id="mode-toggle">
+                <button id="btn-realtime" class="active">Realtime</button>
+                <button id="btn-coverage">Coverage</button>
+            </div>
+            <div id="vehicle-count">Loading vehicles...</div>
+            <div id="db-size"></div>
+            <div id="vehicle-detail">
+                <span class="detail-close" id="detail-close">&times;</span>
+                <div class="detail-name" id="detail-name"></div>
+                <div class="detail-row" id="detail-type"></div>
+                <div class="detail-row" id="detail-speed"></div>
+                <div class="detail-row" id="detail-bearing"></div>
+                <div class="detail-row" id="detail-updated"></div>
+            </div>
+            <div id="coverage-panel">
+                <div id="time-range-presets">
+                    <button data-hours="6">6h</button>
+                    <button data-hours="12">12h</button>
+                    <button data-hours="24" class="active">24h</button>
+                    <button data-hours="date">Date</button>
+                </div>
+                <div id="date-picker-row">
+                    <input type="date" id="coverage-date" />
+                </div>
+                <div id="coverage-range-label"></div>
+                <div id="coverage-view-toggle">
+                    <button id="btn-lines" class="active">Lines</button>
+                    <button id="btn-heatmap">Heatmap</button>
+                </div>
+                <label>Up to:</label>
+                <span id="slider-label"></span>
+                <input
+                    type="range"
+                    id="time-slider"
+                    min="0"
+                    max="1000"
+                    value="1000"
+                />
+                <div id="coverage-loading">Loading coverage data...</div>
+            </div>
+            <div id="legend">
+                <div id="legend-header">
+                    <div class="legend-title">Legend</div>
+                    <button id="legend-toggle" title="Collapse legend">
+                        &#9650;
+                    </button>
+                </div>
+                <div id="legend-body">
+                    <div id="legend-vehicles">
+                        <div class="legend-row">
+                            <span
+                                class="legend-swatch"
+                                style="background: #2563eb"
+                            ></span
+                            >Plow truck
+                        </div>
+                        <div class="legend-row">
+                            <span
+                                class="legend-swatch"
+                                style="background: #ea580c"
+                            ></span
+                            >Loader
+                        </div>
+                        <div class="legend-row">
+                            <span
+                                class="legend-swatch"
+                                style="background: #16a34a"
+                            ></span
+                            >Grader
+                        </div>
+                        <div class="legend-row">
+                            <span
+                                class="legend-swatch"
+                                style="background: #6b7280"
+                            ></span
+                            >Other
+                        </div>
+                    </div>
+                    <div id="legend-heatmap" style="display: none">
+                        <div class="legend-gradient"></div>
+                        <div class="legend-gradient-labels">
+                            <span>Low</span><span>High</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="panel-footer">
+                Data from
+                <a
+                    href="https://map.stjohns.ca/avl/"
+                    target="_blank"
+                    rel="noopener"
+                    >City of St. John's AVL</a
+                ><br />
+                <a
+                    href="https://github.com/jackharrhy/where-the-plow"
+                    target="_blank"
+                    rel="noopener"
+                    >GitHub</a
+                >
+                &middot;
+                <a href="/docs">API Docs</a>
+            </div>
         </div>
-        <div id="legend-heatmap" style="display:none">
-          <div class="legend-gradient"></div>
-          <div class="legend-gradient-labels">
-            <span>Low</span><span>High</span>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div id="panel-footer">
-      Data from <a href="https://map.stjohns.ca/avl/" target="_blank" rel="noopener">City of St. John's AVL</a><br>
-      <a href="https://github.com/jackharrhy/where-the-plow" target="_blank" rel="noopener">View on GitHub</a>
-    </div>
-  </div>
-  <script>
-    // Panel toggle functionality
-    const panelToggle = document.getElementById('panel-toggle');
-    const infoPanel = document.getElementById('info-panel');
-
-    panelToggle.addEventListener('click', () => {
-      const isCollapsed = infoPanel.classList.toggle('collapsed');
-      panelToggle.textContent = isCollapsed ? '☰' : '✕';
-      panelToggle.classList.toggle('visible', true); // Keep button visible
-    });
-
-    // Show toggle button on mobile or when panel is collapsed
-    function updatePanelToggleVisibility() {
-      const isMobile = window.innerWidth <= 768;
-      if (isMobile) {
-        panelToggle.classList.add('visible');
-      } else if (!infoPanel.classList.contains('collapsed')) {
-        panelToggle.classList.remove('visible');
-      }
-    }
-
-    updatePanelToggleVisibility();
-    window.addEventListener('resize', updatePanelToggleVisibility);
-
-    const map = new maplibregl.Map({
-      container: 'map',
-      style: 'https://tiles.openfreemap.org/styles/liberty',
-      center: [-52.71, 47.56],
-      zoom: 12,
-    });
-
-    const geolocate = new maplibregl.GeolocateControl({
-      positionOptions: { enableHighAccuracy: true },
-      trackUserLocation: true,
-      showUserHeading: true,
-    });
-    map.addControl(geolocate, 'bottom-right');
-
-    function formatTimestamp(ts) {
-      const d = new Date(ts);
-      return d.toLocaleString(undefined, {
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      });
-    }
-
-    const VEHICLE_COLORS = {
-      'SA PLOW TRUCK': '#2563eb',
-      'TA PLOW TRUCK': '#2563eb',
-      'LOADER': '#ea580c',
-      'GRADER': '#16a34a',
-    };
-    const DEFAULT_COLOR = '#6b7280';
-
-    function vehicleColor(type) {
-      return VEHICLE_COLORS[type] || DEFAULT_COLOR;
-    }
-
-    function formatBytes(bytes) {
-      if (bytes === null || bytes === undefined) return '';
-      if (bytes < 1024) return bytes + ' B';
-      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-      if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-      return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
-    }
-
-    function updateVehicleCount(data) {
-      const count = data.features ? data.features.length : 0;
-      document.getElementById('vehicle-count').textContent =
-        count + ' vehicle' + (count !== 1 ? 's' : '') + ' tracked';
-      fetch('/stats').then(r => r.json()).then(stats => {
-        if (stats.db_size_bytes) {
-          document.getElementById('db-size').textContent =
-            formatBytes(stats.db_size_bytes) + ' of data';
-        }
-      }).catch(() => {});
-    }
-
-    async function fetchVehicles() {
-      const resp = await fetch('/vehicles');
-      return resp.json();
-    }
-
-    // Track the currently selected vehicle
-    let activeVehicleId = null;
-    let activeVehicleTimestamp = null;
-
-    const detailPanel = document.getElementById('vehicle-detail');
-    const detailName = document.getElementById('detail-name');
-    const detailType = document.getElementById('detail-type');
-    const detailSpeed = document.getElementById('detail-speed');
-    const detailBearing = document.getElementById('detail-bearing');
-    const detailUpdated = document.getElementById('detail-updated');
-
-    let currentMode = 'realtime';
-    let refreshInterval = null;
-    let coverageData = null;
-    let coverageSince = null;
-    let coverageUntil = null;
-
-    const btnRealtime = document.getElementById('btn-realtime');
-    const btnCoverage = document.getElementById('btn-coverage');
-    const coveragePanelEl = document.getElementById('coverage-panel');
-    const timeSlider = document.getElementById('time-slider');
-    const sliderLabel = document.getElementById('slider-label');
-    const coverageLoading = document.getElementById('coverage-loading');
-
-    let coverageView = 'lines'; // 'lines' or 'heatmap'
-    const btnLines = document.getElementById('btn-lines');
-    const btnHeatmap = document.getElementById('btn-heatmap');
-
-    btnLines.addEventListener('click', () => switchCoverageView('lines'));
-    btnHeatmap.addEventListener('click', () => switchCoverageView('heatmap'));
-
-    function showLegend(type) {
-      document.getElementById('legend-vehicles').style.display = type === 'vehicles' ? '' : 'none';
-      document.getElementById('legend-heatmap').style.display  = type === 'heatmap'  ? '' : 'none';
-    }
-
-    const legendToggleBtn = document.getElementById('legend-toggle');
-    const legendBody = document.getElementById('legend-body');
-    legendToggleBtn.addEventListener('click', () => {
-      const collapsed = legendBody.classList.toggle('collapsed');
-      legendToggleBtn.classList.toggle('collapsed', collapsed);
-    });
-
-    function switchCoverageView(view) {
-      if (view === coverageView) return;
-      coverageView = view;
-      btnLines.classList.toggle('active', view === 'lines');
-      btnHeatmap.classList.toggle('active', view === 'heatmap');
-      showLegend(view === 'heatmap' ? 'heatmap' : 'vehicles');
-      renderCoverage(parseInt(timeSlider.value));
-    }
-
-    document.getElementById('detail-close').addEventListener('click', () => {
-      closeDetail();
-    });
-
-    function showDetail(p) {
-      detailName.textContent = p.description;
-      detailType.textContent = p.vehicle_type;
-      detailSpeed.textContent = 'Speed: ' + p.speed + ' km/h';
-      detailBearing.textContent = 'Bearing: ' + p.bearing + '\u00B0';
-      detailUpdated.textContent = 'Updated: ' + formatTimestamp(p.timestamp);
-      detailPanel.style.display = 'block';
-    }
-
-    function closeDetail() {
-      detailPanel.style.display = 'none';
-      activeVehicleId = null;
-      activeVehicleTimestamp = null;
-      clearTrail();
-    }
-
-    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-
-    // Filter out vehicles with timestamps older than 24 hours
-    function filterRecentFeatures(data) {
-      const cutoff = Date.now() - ONE_DAY_MS;
-      return {
-        ...data,
-        features: data.features.filter(f => new Date(f.properties.timestamp).getTime() > cutoff),
-      };
-    }
-
-
-
-    // Fetch last 10 minutes of history for a vehicle, anchored to its latest timestamp
-    async function fetchTrail(vehicleId, vehicleTimestamp) {
-      let until, since;
-      if (vehicleTimestamp) {
-        until = new Date(vehicleTimestamp);
-        since = new Date(until.getTime() - 10 * 60 * 1000);
-      } else {
-        until = new Date();
-        since = new Date(until.getTime() - 10 * 60 * 1000);
-      }
-      const resp = await fetch(
-        `/vehicles/${vehicleId}/history?since=${since.toISOString()}&until=${until.toISOString()}&limit=2000`
-      );
-      return resp.json();
-    }
-
-    // Render a trail of fading circles for the selected vehicle
-    async function showTrail(vehicleId, vehicleTimestamp) {
-      clearTrail();
-      const data = await fetchTrail(vehicleId, vehicleTimestamp);
-      if (!data.features || data.features.length === 0) return;
-
-      const count = data.features.length;
-      // Assign an opacity to each point: oldest = most transparent, newest = most opaque
-      // Minimum opacity 0.15, max 0.7 (the current live dot stays full via the main layer)
-      const features = data.features.map((f, i) => ({
-        ...f,
-        properties: {
-          ...f.properties,
-          trail_opacity: count === 1 ? 0.7 : 0.15 + (i / (count - 1)) * 0.55,
-        },
-      }));
-
-      const trailData = { type: 'FeatureCollection', features };
-
-      // Build individual line segments so each can have its own opacity
-      const segmentFeatures = [];
-      for (let i = 0; i < features.length - 1; i++) {
-        const opacity = features[i].properties.trail_opacity;
-        segmentFeatures.push({
-          type: 'Feature',
-          geometry: {
-            type: 'LineString',
-            coordinates: [
-              features[i].geometry.coordinates,
-              features[i + 1].geometry.coordinates,
-            ],
-          },
-          properties: { seg_opacity: opacity },
-        });
-      }
-      const lineData = { type: 'FeatureCollection', features: segmentFeatures };
-
-      map.addSource('vehicle-trail', { type: 'geojson', data: trailData });
-      map.addSource('vehicle-trail-line', { type: 'geojson', data: lineData });
-
-      // Trail line segments with fading opacity
-      map.addLayer({
-        id: 'vehicle-trail-line',
-        type: 'line',
-        source: 'vehicle-trail-line',
-        paint: {
-          'line-color': '#60a5fa',
-          'line-width': 3,
-          'line-opacity': ['get', 'seg_opacity'],
-        },
-      }, 'vehicle-circles'); // insert below the main circles
-
-      // Trail dots with fading opacity
-      map.addLayer({
-        id: 'vehicle-trail-dots',
-        type: 'circle',
-        source: 'vehicle-trail',
-        paint: {
-          'circle-color': '#60a5fa',
-          'circle-radius': 4,
-          'circle-opacity': ['get', 'trail_opacity'],
-          'circle-stroke-color': '#ffffff',
-          'circle-stroke-width': 1,
-          'circle-stroke-opacity': ['*', ['get', 'trail_opacity'], 0.8],
-        },
-      }, 'vehicle-circles'); // insert below the main circles
-    }
-
-    function clearTrail() {
-      if (map.getLayer('vehicle-trail-dots')) map.removeLayer('vehicle-trail-dots');
-      if (map.getLayer('vehicle-trail-line')) map.removeLayer('vehicle-trail-line');
-      if (map.getSource('vehicle-trail')) map.removeSource('vehicle-trail');
-      if (map.getSource('vehicle-trail-line')) map.removeSource('vehicle-trail-line');
-    }
-
-    async function refreshTrail() {
-      if (!activeVehicleId) return;
-      const data = await fetchTrail(activeVehicleId, activeVehicleTimestamp);
-      if (!data.features || data.features.length === 0) return;
-
-      const count = data.features.length;
-      const features = data.features.map((f, i) => ({
-        ...f,
-        properties: {
-          ...f.properties,
-          trail_opacity: count === 1 ? 0.7 : 0.15 + (i / (count - 1)) * 0.55,
-        },
-      }));
-
-      const trailSource = map.getSource('vehicle-trail');
-      if (trailSource) {
-        trailSource.setData({ type: 'FeatureCollection', features });
-      }
-
-      const segmentFeatures = [];
-      for (let i = 0; i < features.length - 1; i++) {
-        segmentFeatures.push({
-          type: 'Feature',
-          geometry: {
-            type: 'LineString',
-            coordinates: [
-              features[i].geometry.coordinates,
-              features[i + 1].geometry.coordinates,
-            ],
-          },
-          properties: { seg_opacity: features[i].properties.trail_opacity },
-        });
-      }
-      const lineSource = map.getSource('vehicle-trail-line');
-      if (lineSource) {
-        lineSource.setData({ type: 'FeatureCollection', features: segmentFeatures });
-      }
-    }
-
-    function updateDetailFromData(data) {
-      if (!activeVehicleId) return;
-      const feature = data.features.find(
-        f => f.properties.vehicle_id === activeVehicleId
-      );
-      if (!feature) {
-        closeDetail();
-        return;
-      }
-      activeVehicleTimestamp = feature.properties.timestamp;
-      showDetail(feature.properties);
-    }
-
-    // --- Mode switching ---
-    btnRealtime.addEventListener('click', () => switchMode('realtime'));
-    btnCoverage.addEventListener('click', () => switchMode('coverage'));
-
-    async function switchMode(mode) {
-      if (mode === currentMode) return;
-      currentMode = mode;
-      btnRealtime.classList.toggle('active', mode === 'realtime');
-      btnCoverage.classList.toggle('active', mode === 'coverage');
-      if (mode === 'realtime') {
-        enterRealtime();
-      } else {
-        await enterCoverage();
-      }
-    }
-
-    function enterRealtime() {
-      clearCoverageLayers();
-      coveragePanelEl.style.display = 'none';
-      coverageData = null;
-      if (map.getLayer('vehicle-circles')) {
-        map.setLayoutProperty('vehicle-circles', 'visibility', 'visible');
-      }
-      document.getElementById('vehicle-count').style.display = '';
-      document.getElementById('db-size').style.display = '';
-      showLegend('vehicles');
-      startAutoRefresh();
-    }
-
-    async function enterCoverage() {
-      stopAutoRefresh();
-      closeDetail();
-      coverageView = 'lines';
-      btnLines.classList.add('active');
-      btnHeatmap.classList.remove('active');
-      showLegend('vehicles');
-      if (map.getLayer('vehicle-circles')) {
-        map.setLayoutProperty('vehicle-circles', 'visibility', 'none');
-      }
-      document.getElementById('vehicle-count').style.display = 'none';
-      document.getElementById('db-size').style.display = 'none';
-      coveragePanelEl.style.display = 'block';
-      coverageLoading.style.display = 'block';
-      timeSlider.value = 1000;
-
-      coverageUntil = new Date();
-      coverageSince = new Date(coverageUntil.getTime() - ONE_DAY_MS);
-      const resp = await fetch(
-        `/coverage?since=${coverageSince.toISOString()}&until=${coverageUntil.toISOString()}`
-      );
-      coverageData = await resp.json();
-      coverageLoading.style.display = 'none';
-      renderCoverage(1000);
-    }
-
-    // --- Coverage rendering ---
-    function sliderToTime(val) {
-      const range = coverageUntil.getTime() - coverageSince.getTime();
-      return new Date(coverageSince.getTime() + (val / 1000) * range);
-    }
-
-    timeSlider.addEventListener('input', (e) => {
-      renderCoverage(parseInt(e.target.value));
-    });
-
-    function clearHeatmapLayer() {
-      if (map.getLayer('coverage-heatmap')) map.removeLayer('coverage-heatmap');
-      if (map.getSource('coverage-heatmap')) map.removeSource('coverage-heatmap');
-    }
-
-    function clearCoverageLayers() {
-      if (map.getLayer('coverage-lines')) map.removeLayer('coverage-lines');
-      if (map.getSource('coverage-lines')) map.removeSource('coverage-lines');
-      clearHeatmapLayer();
-    }
-
-    function renderCoverage(sliderVal) {
-      if (!coverageData) return;
-      const cutoff = sliderToTime(sliderVal);
-      sliderLabel.textContent = formatTimestamp(cutoff.toISOString());
-
-      if (coverageView === 'lines') {
-        // Hide heatmap if visible
-        if (map.getLayer('coverage-heatmap')) {
-          map.setLayoutProperty('coverage-heatmap', 'visibility', 'none');
-        }
-        renderCoverageLines(sliderVal, cutoff);
-        if (map.getLayer('coverage-lines')) {
-          map.setLayoutProperty('coverage-lines', 'visibility', 'visible');
-        }
-      } else {
-        // Hide lines if visible
-        if (map.getLayer('coverage-lines')) {
-          map.setLayoutProperty('coverage-lines', 'visibility', 'none');
-        }
-        renderHeatmap(sliderVal);
-        if (map.getLayer('coverage-heatmap')) {
-          map.setLayoutProperty('coverage-heatmap', 'visibility', 'visible');
-        }
-      }
-    }
-
-    function renderCoverageLines(sliderVal, cutoff) {
-      const sinceMs = coverageSince.getTime();
-      const rangeMs = cutoff.getTime() - sinceMs;
-
-      const segmentFeatures = [];
-      for (const feature of coverageData.features) {
-        const coords = feature.geometry.coordinates;
-        const timestamps = feature.properties.timestamps;
-        const color = vehicleColor(feature.properties.vehicle_type);
-
-        for (let i = 0; i < coords.length - 1; i++) {
-          const tMs = new Date(timestamps[i]).getTime();
-          const tNextMs = new Date(timestamps[i + 1]).getTime();
-          if (tNextMs > cutoff.getTime()) break;
-
-          const progress = rangeMs > 0 ? (tMs - sinceMs) / rangeMs : 1;
-          const opacity = 0.15 + progress * 0.65;
-
-          segmentFeatures.push({
-            type: 'Feature',
-            geometry: {
-              type: 'LineString',
-              coordinates: [coords[i], coords[i + 1]],
-            },
-            properties: { seg_opacity: opacity, seg_color: color },
-          });
-        }
-      }
-
-      const data = { type: 'FeatureCollection', features: segmentFeatures };
-      const source = map.getSource('coverage-lines');
-      if (source) {
-        source.setData(data);
-      } else {
-        map.addSource('coverage-lines', { type: 'geojson', data });
-        map.addLayer({
-          id: 'coverage-lines',
-          type: 'line',
-          source: 'coverage-lines',
-          paint: {
-            'line-color': ['get', 'seg_color'],
-            'line-width': 3,
-            'line-opacity': ['get', 'seg_opacity'],
-          },
-        });
-      }
-    }
-
-    function renderHeatmap(sliderVal) {
-      if (!coverageData) return;
-      const cutoff = sliderToTime(sliderVal);
-
-      // Extract all coordinates within the time cutoff as Point features
-      const pointFeatures = [];
-      for (const feature of coverageData.features) {
-        const coords = feature.geometry.coordinates;
-        const timestamps = feature.properties.timestamps;
-        for (let i = 0; i < coords.length; i++) {
-          const tMs = new Date(timestamps[i]).getTime();
-          if (tMs > cutoff.getTime()) break;
-          pointFeatures.push({
-            type: 'Feature',
-            geometry: { type: 'Point', coordinates: coords[i] },
-            properties: {},
-          });
-        }
-      }
-
-      const data = { type: 'FeatureCollection', features: pointFeatures };
-      const source = map.getSource('coverage-heatmap');
-      if (source) {
-        source.setData(data);
-      } else {
-        map.addSource('coverage-heatmap', { type: 'geojson', data });
-        map.addLayer({
-          id: 'coverage-heatmap',
-          type: 'heatmap',
-          source: 'coverage-heatmap',
-          paint: {
-            'heatmap-weight': 0.5,
-            'heatmap-intensity': [
-              'interpolate', ['linear'], ['zoom'],
-              10, 0.5,
-              12, 1,
-              15, 2,
-            ],
-            'heatmap-radius': [
-              'interpolate', ['linear'], ['zoom'],
-              10, 3,
-              12, 8,
-              14, 15,
-              16, 25,
-            ],
-            'heatmap-opacity': 0.75,
-            'heatmap-color': [
-              'interpolate', ['linear'], ['heatmap-density'],
-              0, 'rgba(0,0,0,0)',
-              0.15, '#2563eb',
-              0.35, '#60a5fa',
-              0.55, '#fbbf24',
-              0.75, '#f97316',
-              1.0, '#ef4444',
-            ],
-          },
-        });
-      }
-    }
-
-    // --- Auto-refresh (start/stop) ---
-    function startAutoRefresh() {
-      if (refreshInterval) return;
-      refreshInterval = setInterval(async () => {
-        if (currentMode !== 'realtime') return;
-        try {
-          const rawData = await fetchVehicles();
-          const freshData = filterRecentFeatures(rawData);
-          map.getSource('vehicles').setData(freshData);
-          updateVehicleCount(freshData);
-          updateDetailFromData(freshData);
-          refreshTrail();
-        } catch (err) {
-          console.error('Failed to refresh vehicles:', err);
-        }
-      }, 6000);
-    }
-
-    function stopAutoRefresh() {
-      if (refreshInterval) {
-        clearInterval(refreshInterval);
-        refreshInterval = null;
-      }
-    }
-
-    map.on('load', async () => {
-      const rawData = await fetchVehicles();
-      const data = filterRecentFeatures(rawData);
-      updateVehicleCount(data);
-
-      map.addSource('vehicles', {
-        type: 'geojson',
-        data: data,
-      });
-
-      map.addLayer({
-        id: 'vehicle-circles',
-        type: 'circle',
-        source: 'vehicles',
-        paint: {
-          'circle-color': [
-            'match',
-            ['get', 'vehicle_type'],
-            'SA PLOW TRUCK', '#2563eb',
-            'TA PLOW TRUCK', '#2563eb',
-            'LOADER', '#ea580c',
-            'GRADER', '#16a34a',
-            '#6b7280',
-          ],
-          'circle-radius': 7,
-          'circle-stroke-color': '#ffffff',
-          'circle-stroke-width': 2,
-        },
-      });
-
-      // Pointer cursor on hover
-      map.on('mouseenter', 'vehicle-circles', () => {
-        map.getCanvas().style.cursor = 'pointer';
-      });
-      map.on('mouseleave', 'vehicle-circles', () => {
-        map.getCanvas().style.cursor = '';
-      });
-
-      // Click: show detail panel + trail
-      map.on('click', 'vehicle-circles', async (e) => {
-        const feature = e.features[0];
-        const p = feature.properties;
-
-        activeVehicleId = p.vehicle_id;
-        activeVehicleTimestamp = p.timestamp;
-        showDetail(p);
-        await showTrail(p.vehicle_id, p.timestamp);
-      });
-
-      // Auto-refresh
-      startAutoRefresh();
-    });
-  </script>
-</body>
+        <script>
+            // Panel toggle (visibility driven by CSS media query)
+            const panelToggle = document.getElementById("panel-toggle");
+            const infoPanel = document.getElementById("info-panel");
+
+            panelToggle.addEventListener("click", () => {
+                const isOpen = infoPanel.classList.toggle("open");
+                panelToggle.textContent = isOpen ? "\u2715" : "\u2630";
+            });
+
+            const map = new maplibregl.Map({
+                container: "map",
+                style: "https://tiles.openfreemap.org/styles/liberty",
+                center: [-52.71, 47.56],
+                zoom: 12,
+            });
+
+            const geolocate = new maplibregl.GeolocateControl({
+                positionOptions: { enableHighAccuracy: true },
+                trackUserLocation: true,
+                showUserHeading: true,
+            });
+            map.addControl(geolocate, "bottom-right");
+
+            function formatTimestamp(ts) {
+                const d = new Date(ts);
+                return d.toLocaleString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                });
+            }
+
+            const VEHICLE_COLORS = {
+                "SA PLOW TRUCK": "#2563eb",
+                "TA PLOW TRUCK": "#2563eb",
+                LOADER: "#ea580c",
+                GRADER: "#16a34a",
+            };
+            const DEFAULT_COLOR = "#6b7280";
+
+            function vehicleColor(type) {
+                return VEHICLE_COLORS[type] || DEFAULT_COLOR;
+            }
+
+            function formatBytes(bytes) {
+                if (bytes === null || bytes === undefined) return "";
+                if (bytes < 1024) return bytes + " B";
+                if (bytes < 1024 * 1024)
+                    return (bytes / 1024).toFixed(1) + " KB";
+                if (bytes < 1024 * 1024 * 1024)
+                    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+                return (bytes / (1024 * 1024 * 1024)).toFixed(1) + " GB";
+            }
+
+            function updateVehicleCount(data) {
+                const count = data.features ? data.features.length : 0;
+                document.getElementById("vehicle-count").textContent =
+                    count + " vehicle" + (count !== 1 ? "s" : "") + " tracked";
+                fetch("/stats")
+                    .then((r) => r.json())
+                    .then((stats) => {
+                        if (stats.db_size_bytes) {
+                            document.getElementById("db-size").textContent =
+                                formatBytes(stats.db_size_bytes) + " of data";
+                        }
+                    })
+                    .catch(() => {});
+            }
+
+            async function fetchVehicles() {
+                const resp = await fetch("/vehicles");
+                return resp.json();
+            }
+
+            // Track the currently selected vehicle
+            let activeVehicleId = null;
+            let activeVehicleTimestamp = null;
+
+            const detailPanel = document.getElementById("vehicle-detail");
+            const detailName = document.getElementById("detail-name");
+            const detailType = document.getElementById("detail-type");
+            const detailSpeed = document.getElementById("detail-speed");
+            const detailBearing = document.getElementById("detail-bearing");
+            const detailUpdated = document.getElementById("detail-updated");
+
+            let currentMode = "realtime";
+            let refreshInterval = null;
+            let coverageData = null;
+            let coverageSince = null;
+            let coverageUntil = null;
+            let coveragePreset = "24"; // '6', '12', '24', or 'date'
+
+            const btnRealtime = document.getElementById("btn-realtime");
+            const btnCoverage = document.getElementById("btn-coverage");
+            const coveragePanelEl = document.getElementById("coverage-panel");
+            const timeSlider = document.getElementById("time-slider");
+            const sliderLabel = document.getElementById("slider-label");
+            const coverageLoading = document.getElementById("coverage-loading");
+            const coverageRangeLabel =
+                document.getElementById("coverage-range-label");
+            const datePickerRow = document.getElementById("date-picker-row");
+            const coverageDateInput = document.getElementById("coverage-date");
+            const timeRangePresets =
+                document.getElementById("time-range-presets");
+
+            let coverageView = "lines"; // 'lines' or 'heatmap'
+            const btnLines = document.getElementById("btn-lines");
+            const btnHeatmap = document.getElementById("btn-heatmap");
+
+            btnLines.addEventListener("click", () =>
+                switchCoverageView("lines"),
+            );
+            btnHeatmap.addEventListener("click", () =>
+                switchCoverageView("heatmap"),
+            );
+
+            // --- Time range presets ---
+            function formatRangeDate(d) {
+                return d.toLocaleString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                });
+            }
+
+            function updateRangeLabel() {
+                if (coverageSince && coverageUntil) {
+                    coverageRangeLabel.textContent =
+                        formatRangeDate(coverageSince) +
+                        " \u2192 " +
+                        formatRangeDate(coverageUntil);
+                }
+            }
+
+            function setPresetActive(value) {
+                timeRangePresets
+                    .querySelectorAll("button")
+                    .forEach((btn) =>
+                        btn.classList.toggle(
+                            "active",
+                            btn.dataset.hours === value,
+                        ),
+                    );
+                datePickerRow.classList.toggle("visible", value === "date");
+            }
+
+            async function loadCoverageForRange(since, until) {
+                coverageSince = since;
+                coverageUntil = until;
+                updateRangeLabel();
+                coverageLoading.style.display = "block";
+                timeSlider.value = 1000;
+                clearCoverageLayers();
+                const resp = await fetch(
+                    `/coverage?since=${since.toISOString()}&until=${until.toISOString()}`,
+                );
+                coverageData = await resp.json();
+                coverageLoading.style.display = "none";
+                renderCoverage(1000);
+            }
+
+            timeRangePresets.addEventListener("click", async (e) => {
+                const btn = e.target.closest("button");
+                if (!btn) return;
+                const value = btn.dataset.hours;
+                coveragePreset = value;
+                setPresetActive(value);
+                if (value === "date") {
+                    // If a date is already selected, load it
+                    if (coverageDateInput.value) {
+                        await loadCoverageForDate(coverageDateInput.value);
+                    }
+                    return;
+                }
+                const hours = parseInt(value);
+                const now = new Date();
+                await loadCoverageForRange(
+                    new Date(now.getTime() - hours * 60 * 60 * 1000),
+                    now,
+                );
+            });
+
+            async function loadCoverageForDate(dateStr) {
+                // dateStr is YYYY-MM-DD, treat as local date
+                const start = new Date(dateStr + "T00:00:00");
+                const end = new Date(dateStr + "T23:59:59");
+                await loadCoverageForRange(start, end);
+            }
+
+            coverageDateInput.addEventListener("change", async () => {
+                if (coveragePreset === "date" && coverageDateInput.value) {
+                    await loadCoverageForDate(coverageDateInput.value);
+                }
+            });
+
+            // Fetch stats to set date picker bounds
+            async function initDatePickerBounds() {
+                try {
+                    const resp = await fetch("/stats");
+                    const stats = await resp.json();
+                    if (stats.earliest) {
+                        coverageDateInput.min = stats.earliest.slice(0, 10);
+                    }
+                    coverageDateInput.max = new Date()
+                        .toISOString()
+                        .slice(0, 10);
+                } catch (e) {
+                    // ignore
+                }
+            }
+            initDatePickerBounds();
+
+            function showLegend(type) {
+                document.getElementById("legend-vehicles").style.display =
+                    type === "vehicles" ? "" : "none";
+                document.getElementById("legend-heatmap").style.display =
+                    type === "heatmap" ? "" : "none";
+            }
+
+            const legendToggleBtn = document.getElementById("legend-toggle");
+            const legendBody = document.getElementById("legend-body");
+            legendToggleBtn.addEventListener("click", () => {
+                const collapsed = legendBody.classList.toggle("collapsed");
+                legendToggleBtn.classList.toggle("collapsed", collapsed);
+            });
+
+            function switchCoverageView(view) {
+                if (view === coverageView) return;
+                coverageView = view;
+                btnLines.classList.toggle("active", view === "lines");
+                btnHeatmap.classList.toggle("active", view === "heatmap");
+                showLegend(view === "heatmap" ? "heatmap" : "vehicles");
+                renderCoverage(parseInt(timeSlider.value));
+            }
+
+            document
+                .getElementById("detail-close")
+                .addEventListener("click", () => {
+                    closeDetail();
+                });
+
+            function showDetail(p) {
+                detailName.textContent = p.description;
+                detailType.textContent = p.vehicle_type;
+                detailSpeed.textContent = "Speed: " + p.speed + " km/h";
+                detailBearing.textContent = "Bearing: " + p.bearing + "\u00B0";
+                detailUpdated.textContent =
+                    "Updated: " + formatTimestamp(p.timestamp);
+                detailPanel.style.display = "block";
+            }
+
+            function closeDetail() {
+                detailPanel.style.display = "none";
+                activeVehicleId = null;
+                activeVehicleTimestamp = null;
+                clearTrail();
+            }
+
+            const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+            // Filter out vehicles with timestamps older than 24 hours
+            function filterRecentFeatures(data) {
+                const cutoff = Date.now() - ONE_DAY_MS;
+                return {
+                    ...data,
+                    features: data.features.filter(
+                        (f) =>
+                            new Date(f.properties.timestamp).getTime() > cutoff,
+                    ),
+                };
+            }
+
+            // Fetch last 10 minutes of history for a vehicle, anchored to its latest timestamp
+            async function fetchTrail(vehicleId, vehicleTimestamp) {
+                let until, since;
+                if (vehicleTimestamp) {
+                    until = new Date(vehicleTimestamp);
+                    since = new Date(until.getTime() - 10 * 60 * 1000);
+                } else {
+                    until = new Date();
+                    since = new Date(until.getTime() - 10 * 60 * 1000);
+                }
+                const resp = await fetch(
+                    `/vehicles/${vehicleId}/history?since=${since.toISOString()}&until=${until.toISOString()}&limit=2000`,
+                );
+                return resp.json();
+            }
+
+            // Render a trail of fading circles for the selected vehicle
+            async function showTrail(vehicleId, vehicleTimestamp) {
+                clearTrail();
+                const data = await fetchTrail(vehicleId, vehicleTimestamp);
+                if (!data.features || data.features.length === 0) return;
+
+                const count = data.features.length;
+                // Assign an opacity to each point: oldest = most transparent, newest = most opaque
+                // Minimum opacity 0.15, max 0.7 (the current live dot stays full via the main layer)
+                const features = data.features.map((f, i) => ({
+                    ...f,
+                    properties: {
+                        ...f.properties,
+                        trail_opacity:
+                            count === 1 ? 0.7 : 0.15 + (i / (count - 1)) * 0.55,
+                    },
+                }));
+
+                const trailData = { type: "FeatureCollection", features };
+
+                // Build individual line segments so each can have its own opacity
+                const segmentFeatures = [];
+                for (let i = 0; i < features.length - 1; i++) {
+                    const opacity = features[i].properties.trail_opacity;
+                    segmentFeatures.push({
+                        type: "Feature",
+                        geometry: {
+                            type: "LineString",
+                            coordinates: [
+                                features[i].geometry.coordinates,
+                                features[i + 1].geometry.coordinates,
+                            ],
+                        },
+                        properties: { seg_opacity: opacity },
+                    });
+                }
+                const lineData = {
+                    type: "FeatureCollection",
+                    features: segmentFeatures,
+                };
+
+                map.addSource("vehicle-trail", {
+                    type: "geojson",
+                    data: trailData,
+                });
+                map.addSource("vehicle-trail-line", {
+                    type: "geojson",
+                    data: lineData,
+                });
+
+                // Trail line segments with fading opacity
+                map.addLayer(
+                    {
+                        id: "vehicle-trail-line",
+                        type: "line",
+                        source: "vehicle-trail-line",
+                        paint: {
+                            "line-color": "#60a5fa",
+                            "line-width": 3,
+                            "line-opacity": ["get", "seg_opacity"],
+                        },
+                    },
+                    "vehicle-circles",
+                ); // insert below the main circles
+
+                // Trail dots with fading opacity
+                map.addLayer(
+                    {
+                        id: "vehicle-trail-dots",
+                        type: "circle",
+                        source: "vehicle-trail",
+                        paint: {
+                            "circle-color": "#60a5fa",
+                            "circle-radius": 4,
+                            "circle-opacity": ["get", "trail_opacity"],
+                            "circle-stroke-color": "#ffffff",
+                            "circle-stroke-width": 1,
+                            "circle-stroke-opacity": [
+                                "*",
+                                ["get", "trail_opacity"],
+                                0.8,
+                            ],
+                        },
+                    },
+                    "vehicle-circles",
+                ); // insert below the main circles
+            }
+
+            function clearTrail() {
+                if (map.getLayer("vehicle-trail-dots"))
+                    map.removeLayer("vehicle-trail-dots");
+                if (map.getLayer("vehicle-trail-line"))
+                    map.removeLayer("vehicle-trail-line");
+                if (map.getSource("vehicle-trail"))
+                    map.removeSource("vehicle-trail");
+                if (map.getSource("vehicle-trail-line"))
+                    map.removeSource("vehicle-trail-line");
+            }
+
+            async function refreshTrail() {
+                if (!activeVehicleId) return;
+                const data = await fetchTrail(
+                    activeVehicleId,
+                    activeVehicleTimestamp,
+                );
+                if (!data.features || data.features.length === 0) return;
+
+                const count = data.features.length;
+                const features = data.features.map((f, i) => ({
+                    ...f,
+                    properties: {
+                        ...f.properties,
+                        trail_opacity:
+                            count === 1 ? 0.7 : 0.15 + (i / (count - 1)) * 0.55,
+                    },
+                }));
+
+                const trailSource = map.getSource("vehicle-trail");
+                if (trailSource) {
+                    trailSource.setData({
+                        type: "FeatureCollection",
+                        features,
+                    });
+                }
+
+                const segmentFeatures = [];
+                for (let i = 0; i < features.length - 1; i++) {
+                    segmentFeatures.push({
+                        type: "Feature",
+                        geometry: {
+                            type: "LineString",
+                            coordinates: [
+                                features[i].geometry.coordinates,
+                                features[i + 1].geometry.coordinates,
+                            ],
+                        },
+                        properties: {
+                            seg_opacity: features[i].properties.trail_opacity,
+                        },
+                    });
+                }
+                const lineSource = map.getSource("vehicle-trail-line");
+                if (lineSource) {
+                    lineSource.setData({
+                        type: "FeatureCollection",
+                        features: segmentFeatures,
+                    });
+                }
+            }
+
+            function updateDetailFromData(data) {
+                if (!activeVehicleId) return;
+                const feature = data.features.find(
+                    (f) => f.properties.vehicle_id === activeVehicleId,
+                );
+                if (!feature) {
+                    closeDetail();
+                    return;
+                }
+                activeVehicleTimestamp = feature.properties.timestamp;
+                showDetail(feature.properties);
+            }
+
+            // --- Mode switching ---
+            btnRealtime.addEventListener("click", () => switchMode("realtime"));
+            btnCoverage.addEventListener("click", () => switchMode("coverage"));
+
+            async function switchMode(mode) {
+                if (mode === currentMode) return;
+                currentMode = mode;
+                btnRealtime.classList.toggle("active", mode === "realtime");
+                btnCoverage.classList.toggle("active", mode === "coverage");
+                if (mode === "realtime") {
+                    enterRealtime();
+                } else {
+                    await enterCoverage();
+                }
+            }
+
+            function enterRealtime() {
+                clearCoverageLayers();
+                coveragePanelEl.style.display = "none";
+                coverageData = null;
+                if (map.getLayer("vehicle-circles")) {
+                    map.setLayoutProperty(
+                        "vehicle-circles",
+                        "visibility",
+                        "visible",
+                    );
+                }
+                document.getElementById("vehicle-count").style.display = "";
+                document.getElementById("db-size").style.display = "";
+                showLegend("vehicles");
+                startAutoRefresh();
+            }
+
+            async function enterCoverage() {
+                stopAutoRefresh();
+                closeDetail();
+                coverageView = "lines";
+                btnLines.classList.add("active");
+                btnHeatmap.classList.remove("active");
+                showLegend("vehicles");
+                if (map.getLayer("vehicle-circles")) {
+                    map.setLayoutProperty(
+                        "vehicle-circles",
+                        "visibility",
+                        "none",
+                    );
+                }
+                document.getElementById("vehicle-count").style.display = "none";
+                document.getElementById("db-size").style.display = "none";
+                coveragePanelEl.style.display = "block";
+
+                // Default to 24h preset
+                coveragePreset = "24";
+                setPresetActive("24");
+                const now = new Date();
+                await loadCoverageForRange(
+                    new Date(now.getTime() - ONE_DAY_MS),
+                    now,
+                );
+            }
+
+            // --- Coverage rendering ---
+            function sliderToTime(val) {
+                const range = coverageUntil.getTime() - coverageSince.getTime();
+                return new Date(coverageSince.getTime() + (val / 1000) * range);
+            }
+
+            timeSlider.addEventListener("input", (e) => {
+                renderCoverage(parseInt(e.target.value));
+            });
+
+            function clearHeatmapLayer() {
+                if (map.getLayer("coverage-heatmap"))
+                    map.removeLayer("coverage-heatmap");
+                if (map.getSource("coverage-heatmap"))
+                    map.removeSource("coverage-heatmap");
+            }
+
+            function clearCoverageLayers() {
+                if (map.getLayer("coverage-lines"))
+                    map.removeLayer("coverage-lines");
+                if (map.getSource("coverage-lines"))
+                    map.removeSource("coverage-lines");
+                clearHeatmapLayer();
+            }
+
+            function renderCoverage(sliderVal) {
+                if (!coverageData) return;
+                const cutoff = sliderToTime(sliderVal);
+                sliderLabel.textContent = formatTimestamp(cutoff.toISOString());
+
+                if (coverageView === "lines") {
+                    // Hide heatmap if visible
+                    if (map.getLayer("coverage-heatmap")) {
+                        map.setLayoutProperty(
+                            "coverage-heatmap",
+                            "visibility",
+                            "none",
+                        );
+                    }
+                    renderCoverageLines(sliderVal, cutoff);
+                    if (map.getLayer("coverage-lines")) {
+                        map.setLayoutProperty(
+                            "coverage-lines",
+                            "visibility",
+                            "visible",
+                        );
+                    }
+                } else {
+                    // Hide lines if visible
+                    if (map.getLayer("coverage-lines")) {
+                        map.setLayoutProperty(
+                            "coverage-lines",
+                            "visibility",
+                            "none",
+                        );
+                    }
+                    renderHeatmap(sliderVal);
+                    if (map.getLayer("coverage-heatmap")) {
+                        map.setLayoutProperty(
+                            "coverage-heatmap",
+                            "visibility",
+                            "visible",
+                        );
+                    }
+                }
+            }
+
+            function renderCoverageLines(sliderVal, cutoff) {
+                const sinceMs = coverageSince.getTime();
+                const rangeMs = cutoff.getTime() - sinceMs;
+
+                const segmentFeatures = [];
+                for (const feature of coverageData.features) {
+                    const coords = feature.geometry.coordinates;
+                    const timestamps = feature.properties.timestamps;
+                    const color = vehicleColor(feature.properties.vehicle_type);
+
+                    for (let i = 0; i < coords.length - 1; i++) {
+                        const tMs = new Date(timestamps[i]).getTime();
+                        const tNextMs = new Date(timestamps[i + 1]).getTime();
+                        if (tNextMs > cutoff.getTime()) break;
+
+                        const progress =
+                            rangeMs > 0 ? (tMs - sinceMs) / rangeMs : 1;
+                        const opacity = 0.15 + progress * 0.65;
+
+                        segmentFeatures.push({
+                            type: "Feature",
+                            geometry: {
+                                type: "LineString",
+                                coordinates: [coords[i], coords[i + 1]],
+                            },
+                            properties: {
+                                seg_opacity: opacity,
+                                seg_color: color,
+                            },
+                        });
+                    }
+                }
+
+                const data = {
+                    type: "FeatureCollection",
+                    features: segmentFeatures,
+                };
+                const source = map.getSource("coverage-lines");
+                if (source) {
+                    source.setData(data);
+                } else {
+                    map.addSource("coverage-lines", { type: "geojson", data });
+                    map.addLayer({
+                        id: "coverage-lines",
+                        type: "line",
+                        source: "coverage-lines",
+                        paint: {
+                            "line-color": ["get", "seg_color"],
+                            "line-width": 3,
+                            "line-opacity": ["get", "seg_opacity"],
+                        },
+                    });
+                }
+            }
+
+            function renderHeatmap(sliderVal) {
+                if (!coverageData) return;
+                const cutoff = sliderToTime(sliderVal);
+
+                // Extract all coordinates within the time cutoff as Point features
+                const pointFeatures = [];
+                for (const feature of coverageData.features) {
+                    const coords = feature.geometry.coordinates;
+                    const timestamps = feature.properties.timestamps;
+                    for (let i = 0; i < coords.length; i++) {
+                        const tMs = new Date(timestamps[i]).getTime();
+                        if (tMs > cutoff.getTime()) break;
+                        pointFeatures.push({
+                            type: "Feature",
+                            geometry: { type: "Point", coordinates: coords[i] },
+                            properties: {},
+                        });
+                    }
+                }
+
+                const data = {
+                    type: "FeatureCollection",
+                    features: pointFeatures,
+                };
+                const source = map.getSource("coverage-heatmap");
+                if (source) {
+                    source.setData(data);
+                } else {
+                    map.addSource("coverage-heatmap", {
+                        type: "geojson",
+                        data,
+                    });
+                    map.addLayer({
+                        id: "coverage-heatmap",
+                        type: "heatmap",
+                        source: "coverage-heatmap",
+                        paint: {
+                            "heatmap-weight": 0.5,
+                            "heatmap-intensity": [
+                                "interpolate",
+                                ["linear"],
+                                ["zoom"],
+                                10,
+                                0.5,
+                                12,
+                                1,
+                                15,
+                                2,
+                            ],
+                            "heatmap-radius": [
+                                "interpolate",
+                                ["linear"],
+                                ["zoom"],
+                                10,
+                                3,
+                                12,
+                                8,
+                                14,
+                                15,
+                                16,
+                                25,
+                            ],
+                            "heatmap-opacity": 0.75,
+                            "heatmap-color": [
+                                "interpolate",
+                                ["linear"],
+                                ["heatmap-density"],
+                                0,
+                                "rgba(0,0,0,0)",
+                                0.15,
+                                "#2563eb",
+                                0.35,
+                                "#60a5fa",
+                                0.55,
+                                "#fbbf24",
+                                0.75,
+                                "#f97316",
+                                1.0,
+                                "#ef4444",
+                            ],
+                        },
+                    });
+                }
+            }
+
+            // --- Auto-refresh (start/stop) ---
+            function startAutoRefresh() {
+                if (refreshInterval) return;
+                refreshInterval = setInterval(async () => {
+                    if (currentMode !== "realtime") return;
+                    try {
+                        const rawData = await fetchVehicles();
+                        const freshData = filterRecentFeatures(rawData);
+                        map.getSource("vehicles").setData(freshData);
+                        updateVehicleCount(freshData);
+                        updateDetailFromData(freshData);
+                        refreshTrail();
+                    } catch (err) {
+                        console.error("Failed to refresh vehicles:", err);
+                    }
+                }, 6000);
+            }
+
+            function stopAutoRefresh() {
+                if (refreshInterval) {
+                    clearInterval(refreshInterval);
+                    refreshInterval = null;
+                }
+            }
+
+            map.on("load", async () => {
+                const rawData = await fetchVehicles();
+                const data = filterRecentFeatures(rawData);
+                updateVehicleCount(data);
+
+                map.addSource("vehicles", {
+                    type: "geojson",
+                    data: data,
+                });
+
+                map.addLayer({
+                    id: "vehicle-circles",
+                    type: "circle",
+                    source: "vehicles",
+                    paint: {
+                        "circle-color": [
+                            "match",
+                            ["get", "vehicle_type"],
+                            "SA PLOW TRUCK",
+                            "#2563eb",
+                            "TA PLOW TRUCK",
+                            "#2563eb",
+                            "LOADER",
+                            "#ea580c",
+                            "GRADER",
+                            "#16a34a",
+                            "#6b7280",
+                        ],
+                        "circle-radius": 7,
+                        "circle-stroke-color": "#ffffff",
+                        "circle-stroke-width": 2,
+                    },
+                });
+
+                // Pointer cursor on hover
+                map.on("mouseenter", "vehicle-circles", () => {
+                    map.getCanvas().style.cursor = "pointer";
+                });
+                map.on("mouseleave", "vehicle-circles", () => {
+                    map.getCanvas().style.cursor = "";
+                });
+
+                // Click: show detail panel + trail
+                map.on("click", "vehicle-circles", async (e) => {
+                    const feature = e.features[0];
+                    const p = feature.properties;
+
+                    activeVehicleId = p.vehicle_id;
+                    activeVehicleTimestamp = p.timestamp;
+                    showDetail(p);
+                    await showTrail(p.vehicle_id, p.timestamp);
+                });
+
+                // Auto-refresh
+                startAutoRefresh();
+            });
+        </script>
+    </body>
 </html>

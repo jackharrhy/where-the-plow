@@ -1,5 +1,5 @@
 services:
-  app:
+  plow:
     build: .
     ports:
       - "127.0.0.1:8000:8000"
@@ -8,4 +8,3 @@ services:
     environment:
       - DB_PATH=/data/plow.db
       - POLL_INTERVAL=6
-    restart: unless-stopped
