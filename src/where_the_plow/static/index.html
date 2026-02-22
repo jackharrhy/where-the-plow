@@ -32,6 +32,22 @@
       z-index: 10;
       min-width: 180px;
       backdrop-filter: blur(6px);
+      transition: transform 0.3s ease;
+    }
+    #info-panel.collapsed {
+      transform: translateX(calc(100% + 12px));
+    }
+    @media (max-width: 768px) {
+      #info-panel {
+        max-width: 240px;
+        font-size: 12px;
+        padding: 12px 14px;
+        top: 8px;
+        right: 8px;
+      }
+      #info-panel h3 {
+        font-size: 14px;
+      }
     }
     #info-panel h3 {
       margin: 0 0 6px 0;
@@ -245,10 +261,50 @@
       font-size: 0.72rem;
       color: #9ca3af;
     }
+    #panel-toggle {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: rgba(20, 20, 30, 0.85);
+      color: #e5e7eb;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px;
+      width: 40px;
+      height: 40px;
+      cursor: pointer;
+      z-index: 9;
+      backdrop-filter: blur(6px);
+      font-size: 20px;
+      line-height: 1;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+    #panel-toggle:hover {
+      background: rgba(30, 30, 40, 0.95);
+      border-color: rgba(255,255,255,0.3);
+    }
+    #panel-toggle:active {
+      transform: scale(0.95);
+    }
+    #panel-toggle.visible {
+      display: flex;
+    }
+    @media (max-width: 768px) {
+      #panel-toggle {
+        top: 8px;
+        right: 8px;
+        width: 36px;
+        height: 36px;
+        font-size: 18px;
+      }
+    }
   </style>
 </head>
 <body>
   <div id="map"></div>
+  <button id="panel-toggle" title="Toggle info panel">☰</button>
   <div id="info-panel">
     <h3>Where the Plow</h3>
     <a href="/docs">API Documentation</a>
@@ -302,6 +358,29 @@
     </div>
   </div>
   <script>
+    // Panel toggle functionality
+    const panelToggle = document.getElementById('panel-toggle');
+    const infoPanel = document.getElementById('info-panel');
+
+    panelToggle.addEventListener('click', () => {
+      const isCollapsed = infoPanel.classList.toggle('collapsed');
+      panelToggle.textContent = isCollapsed ? '☰' : '✕';
+      panelToggle.classList.toggle('visible', true); // Keep button visible
+    });
+
+    // Show toggle button on mobile or when panel is collapsed
+    function updatePanelToggleVisibility() {
+      const isMobile = window.innerWidth <= 768;
+      if (isMobile) {
+        panelToggle.classList.add('visible');
+      } else if (!infoPanel.classList.contains('collapsed')) {
+        panelToggle.classList.remove('visible');
+      }
+    }
+
+    updatePanelToggleVisibility();
+    window.addEventListener('resize', updatePanelToggleVisibility);
+
     const map = new maplibregl.Map({
       container: 'map',
       style: 'https://tiles.openfreemap.org/styles/liberty',
