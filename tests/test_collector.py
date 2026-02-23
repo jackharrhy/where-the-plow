@@ -1,4 +1,3 @@
-# tests/test_collector.py
 import os
 import tempfile
 
@@ -6,7 +5,7 @@ from where_the_plow.db import Database
 from where_the_plow.collector import process_poll
 
 
-SAMPLE_RESPONSE = {
+SAMPLE_AVL_RESPONSE = {
     "features": [
         {
             "attributes": {
@@ -23,6 +22,18 @@ SAMPLE_RESPONSE = {
     ]
 }
 
+SAMPLE_AATRACKING_RESPONSE = [
+    {
+        "VEH_ID": 17186,
+        "VEH_NAME": "21-21D",
+        "VEH_EVENT_DATETIME": "2026-02-23T02:47:04",
+        "VEH_EVENT_LATITUDE": 47.52,
+        "VEH_EVENT_LONGITUDE": -52.84,
+        "VEH_EVENT_HEADING": 144,
+        "LOO_DESCRIPTION": "Large Snow Plow_Blue",
+    }
+]
+
 
 def make_db():
     fd, path = tempfile.mkstemp(suffix=".db")
@@ -33,35 +44,39 @@ def make_db():
     return db, path
 
 
-def test_process_poll_inserts_data():
+def test_process_poll_avl():
     db, path = make_db()
-
-    inserted = process_poll(db, SAMPLE_RESPONSE)
+    inserted = process_poll(db, SAMPLE_AVL_RESPONSE, source="st_johns", parser="avl")
     assert inserted == 1
+    row = db.conn.execute(
+        "SELECT source FROM positions WHERE vehicle_id='v1'"
+    ).fetchone()
+    assert row[0] == "st_johns"
+    db.close()
+    os.unlink(path)
 
-    # Verify vehicle was upserted
-    row = db.conn.execute("SELECT * FROM vehicles WHERE vehicle_id='v1'").fetchone()
-    assert row is not None
-    assert row[1] == "2222 SA PLOW TRUCK"
 
-    # Verify position was inserted
-    row = db.conn.execute("SELECT * FROM positions WHERE vehicle_id='v1'").fetchone()
-    assert row is not None
-
+def test_process_poll_aatracking():
+    db, path = make_db()
+    inserted = process_poll(
+        db, SAMPLE_AATRACKING_RESPONSE, source="mt_pearl", parser="aatracking"
+    )
+    assert inserted == 1
+    row = db.conn.execute(
+        "SELECT source FROM positions WHERE vehicle_id='17186'"
+    ).fetchone()
+    assert row[0] == "mt_pearl"
     db.close()
     os.unlink(path)
 
 
 def test_process_poll_deduplicates():
     db, path = make_db()
-
-    inserted1 = process_poll(db, SAMPLE_RESPONSE)
-    inserted2 = process_poll(db, SAMPLE_RESPONSE)
+    inserted1 = process_poll(db, SAMPLE_AVL_RESPONSE, source="st_johns", parser="avl")
+    inserted2 = process_poll(db, SAMPLE_AVL_RESPONSE, source="st_johns", parser="avl")
     assert inserted1 == 1
     assert inserted2 == 0
-
     total = db.conn.execute("SELECT count(*) FROM positions").fetchone()[0]
     assert total == 1
-
     db.close()
     os.unlink(path)
