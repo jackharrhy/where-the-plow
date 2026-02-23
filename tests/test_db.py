@@ -1069,3 +1069,227 @@ def test_get_latest_positions_with_trails_no_gap():
 
     db.close()
     os.unlink(path)
+
+
+def test_migration_from_pre_source_schema():
+    """Simulate migrating a production DB that has the old schema (no source column).
+
+    Creates a DB with the old schema (vehicle PK=vehicle_id, position PK=(vehicle_id, timestamp)),
+    populates it with data, then runs Database.init() which should migrate to the new schema
+    with composite PKs including source.
+    """
+    import duckdb
+
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    os.unlink(path)
+
+    # Step 1: Create OLD schema (pre-multi-source) directly with DuckDB
+    conn = duckdb.connect(path)
+    conn.execute("INSTALL spatial")
+    conn.execute("LOAD spatial")
+    conn.execute("""
+        CREATE TABLE vehicles (
+            vehicle_id    VARCHAR PRIMARY KEY,
+            description   VARCHAR,
+            vehicle_type  VARCHAR,
+            first_seen    TIMESTAMPTZ NOT NULL,
+            last_seen     TIMESTAMPTZ NOT NULL
+        )
+    """)
+    conn.execute("CREATE SEQUENCE IF NOT EXISTS positions_seq")
+    conn.execute("""
+        CREATE TABLE positions (
+            id            BIGINT DEFAULT nextval('positions_seq'),
+            vehicle_id    VARCHAR NOT NULL,
+            timestamp     TIMESTAMPTZ NOT NULL,
+            collected_at  TIMESTAMPTZ NOT NULL,
+            longitude     DOUBLE NOT NULL,
+            latitude      DOUBLE NOT NULL,
+            geom          GEOMETRY,
+            bearing       INTEGER,
+            speed         DOUBLE,
+            is_driving    VARCHAR,
+            PRIMARY KEY (vehicle_id, timestamp)
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_positions_time_geo
+            ON positions (timestamp, latitude, longitude)
+    """)
+    conn.execute("CREATE SEQUENCE IF NOT EXISTS viewports_seq")
+    conn.execute("""
+        CREATE TABLE viewports (
+            id          BIGINT DEFAULT nextval('viewports_seq') PRIMARY KEY,
+            timestamp   TIMESTAMPTZ NOT NULL DEFAULT now(),
+            ip          VARCHAR,
+            user_agent  VARCHAR,
+            zoom        DOUBLE NOT NULL,
+            center_lng  DOUBLE NOT NULL,
+            center_lat  DOUBLE NOT NULL,
+            sw_lng      DOUBLE NOT NULL,
+            sw_lat      DOUBLE NOT NULL,
+            ne_lng      DOUBLE NOT NULL,
+            ne_lat      DOUBLE NOT NULL
+        )
+    """)
+    conn.execute("CREATE SEQUENCE IF NOT EXISTS signups_seq")
+    conn.execute("""
+        CREATE TABLE signups (
+            id              BIGINT DEFAULT nextval('signups_seq') PRIMARY KEY,
+            timestamp       TIMESTAMPTZ NOT NULL DEFAULT now(),
+            email           VARCHAR NOT NULL,
+            ip              VARCHAR,
+            user_agent      VARCHAR,
+            notify_plow     BOOLEAN NOT NULL DEFAULT FALSE,
+            notify_projects BOOLEAN NOT NULL DEFAULT FALSE,
+            notify_siliconharbour BOOLEAN NOT NULL DEFAULT FALSE,
+            note            VARCHAR
+        )
+    """)
+
+    # Populate with sample data
+    conn.execute("""
+        INSERT INTO vehicles VALUES
+            ('v1', 'Plow 1', 'SA PLOW TRUCK', '2026-02-19T00:00:00Z', '2026-02-19T12:00:00Z'),
+            ('v2', 'Loader 1', 'LOADER', '2026-02-19T00:00:00Z', '2026-02-19T12:00:00Z')
+    """)
+    conn.execute("""
+        INSERT INTO positions (vehicle_id, timestamp, collected_at, longitude, latitude, geom, bearing, speed, is_driving) VALUES
+            ('v1', '2026-02-19T12:00:00Z', '2026-02-19T12:00:00Z', -52.73, 47.56, ST_Point(-52.73, 47.56), 135, 13.4, 'maybe'),
+            ('v2', '2026-02-19T12:00:00Z', '2026-02-19T12:00:00Z', -52.80, 47.50, ST_Point(-52.80, 47.50), 0, 0.0, 'no')
+    """)
+    conn.close()
+
+    # Step 2: Run Database.init() which should migrate the schema
+    db = Database(path)
+    db.init()
+
+    # Step 3: Verify migration results
+
+    # Source column exists on both tables
+    veh_cols = {
+        r[0]
+        for r in db.conn.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='vehicles'"
+        ).fetchall()
+    }
+    assert "source" in veh_cols, "vehicles should have source column after migration"
+
+    pos_cols = {
+        r[0]
+        for r in db.conn.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='positions'"
+        ).fetchall()
+    }
+    assert "source" in pos_cols, "positions should have source column after migration"
+
+    # All existing data backfilled with 'st_johns'
+    v_sources = db.conn.execute("SELECT DISTINCT source FROM vehicles").fetchall()
+    assert v_sources == [("st_johns",)]
+
+    p_sources = db.conn.execute("SELECT DISTINCT source FROM positions").fetchall()
+    assert p_sources == [("st_johns",)]
+
+    # Row counts preserved
+    assert db.conn.execute("SELECT count(*) FROM vehicles").fetchone()[0] == 2
+    assert db.conn.execute("SELECT count(*) FROM positions").fetchone()[0] == 2
+
+    # PKs are correct (composite including source)
+    veh_pk = db.conn.execute(
+        "SELECT constraint_text FROM duckdb_constraints() "
+        "WHERE table_name='vehicles' AND constraint_type='PRIMARY KEY'"
+    ).fetchone()
+    assert "source" in veh_pk[0], f"vehicles PK should include source: {veh_pk[0]}"
+
+    pos_pk = db.conn.execute(
+        "SELECT constraint_text FROM duckdb_constraints() "
+        "WHERE table_name='positions' AND constraint_type='PRIMARY KEY'"
+    ).fetchone()
+    assert "source" in pos_pk[0], f"positions PK should include source: {pos_pk[0]}"
+
+    # Cross-source inserts work
+    now = datetime(2026, 2, 23, 0, 0, 0, tzinfo=timezone.utc)
+    db.upsert_vehicles(
+        [{"vehicle_id": "v1", "description": "MP Plow", "vehicle_type": "LOADER"}],
+        now,
+        source="mt_pearl",
+    )
+    v_count = db.conn.execute(
+        "SELECT count(*) FROM vehicles WHERE vehicle_id='v1'"
+    ).fetchone()[0]
+    assert v_count == 2, "Same vehicle_id with different sources should create 2 rows"
+
+    ts = datetime(2026, 2, 19, 12, 0, 0, tzinfo=timezone.utc)
+    db.insert_positions(
+        [
+            {
+                "vehicle_id": "v1",
+                "timestamp": ts,
+                "longitude": -52.81,
+                "latitude": 47.52,
+                "bearing": 0,
+                "speed": None,
+                "is_driving": None,
+            }
+        ],
+        now,
+        source="mt_pearl",
+    )
+    p_count = db.conn.execute(
+        "SELECT count(*) FROM positions WHERE vehicle_id='v1'"
+    ).fetchone()[0]
+    assert p_count == 2, (
+        "Same vehicle_id+timestamp with different sources should create 2 rows"
+    )
+
+    # Existing query methods still work with source filter
+    rows = db.get_latest_positions(limit=200, source="st_johns")
+    assert len(rows) == 2
+    assert all(r["source"] == "st_johns" for r in rows)
+
+    rows = db.get_latest_positions(limit=200, source="mt_pearl")
+    assert len(rows) == 1
+    assert rows[0]["source"] == "mt_pearl"
+
+    db.close()
+    os.unlink(path)
+
+
+def test_migration_is_idempotent():
+    """Running init() twice should not fail or duplicate data."""
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    os.unlink(path)
+
+    db = Database(path)
+    db.init()
+
+    now = datetime(2026, 2, 23, 0, 0, 0, tzinfo=timezone.utc)
+    db.upsert_vehicles(
+        [{"vehicle_id": "v1", "description": "Plow", "vehicle_type": "LOADER"}],
+        now,
+    )
+    db.insert_positions(
+        [
+            {
+                "vehicle_id": "v1",
+                "timestamp": now,
+                "longitude": -52.73,
+                "latitude": 47.56,
+                "bearing": 0,
+                "speed": 0.0,
+                "is_driving": "no",
+            }
+        ],
+        now,
+    )
+
+    # Run init again — should be a no-op since source column already exists
+    db.init()
+
+    assert db.conn.execute("SELECT count(*) FROM vehicles").fetchone()[0] == 1
+    assert db.conn.execute("SELECT count(*) FROM positions").fetchone()[0] == 1
+
+    db.close()
+    os.unlink(path)

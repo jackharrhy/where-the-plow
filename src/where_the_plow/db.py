@@ -130,7 +130,10 @@ class Database:
             if "user_agent" not in su_cols:
                 cur.execute("ALTER TABLE signups ADD COLUMN user_agent VARCHAR")
 
-        # Migration: add source column to vehicles
+        # Migration: add source column to vehicles via table recreation.
+        # DuckDB doesn't support ALTER TABLE ADD COLUMN with NOT NULL/DEFAULT
+        # constraints, and can't ALTER PRIMARY KEY. We recreate the table
+        # with the correct composite PK (vehicle_id, source).
         veh_cols = {
             r[0]
             for r in cur.execute(
@@ -139,15 +142,28 @@ class Database:
             ).fetchall()
         }
         if "source" not in veh_cols:
-            cur.execute(
-                "ALTER TABLE vehicles ADD COLUMN source VARCHAR NOT NULL DEFAULT 'st_johns'"
-            )
-            cur.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_vehicles_id_source "
-                "ON vehicles (vehicle_id, source)"
-            )
+            cur.execute("""
+                CREATE TABLE vehicles_new (
+                    vehicle_id    VARCHAR NOT NULL,
+                    description   VARCHAR,
+                    vehicle_type  VARCHAR,
+                    first_seen    TIMESTAMPTZ NOT NULL,
+                    last_seen     TIMESTAMPTZ NOT NULL,
+                    source        VARCHAR NOT NULL DEFAULT 'st_johns',
+                    PRIMARY KEY (vehicle_id, source)
+                )
+            """)
+            cur.execute("""
+                INSERT INTO vehicles_new
+                    (vehicle_id, description, vehicle_type, first_seen, last_seen, source)
+                SELECT vehicle_id, description, vehicle_type, first_seen, last_seen, 'st_johns'
+                FROM vehicles
+            """)
+            cur.execute("DROP TABLE vehicles")
+            cur.execute("ALTER TABLE vehicles_new RENAME TO vehicles")
 
-        # Migration: add source column to positions
+        # Migration: add source column to positions via table recreation.
+        # Same reason: need composite PK (vehicle_id, timestamp, source).
         pos_cols = {
             r[0]
             for r in cur.execute(
@@ -156,13 +172,37 @@ class Database:
             ).fetchall()
         }
         if "source" not in pos_cols:
-            cur.execute(
-                "ALTER TABLE positions ADD COLUMN source VARCHAR NOT NULL DEFAULT 'st_johns'"
-            )
-            cur.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_positions_dedup "
-                "ON positions (vehicle_id, timestamp, source)"
-            )
+            cur.execute("CREATE SEQUENCE IF NOT EXISTS positions_mig_seq")
+            cur.execute("""
+                CREATE TABLE positions_new (
+                    id            BIGINT DEFAULT nextval('positions_mig_seq'),
+                    vehicle_id    VARCHAR NOT NULL,
+                    timestamp     TIMESTAMPTZ NOT NULL,
+                    collected_at  TIMESTAMPTZ NOT NULL,
+                    longitude     DOUBLE NOT NULL,
+                    latitude      DOUBLE NOT NULL,
+                    geom          GEOMETRY,
+                    bearing       INTEGER,
+                    speed         DOUBLE,
+                    is_driving    VARCHAR,
+                    source        VARCHAR NOT NULL DEFAULT 'st_johns',
+                    PRIMARY KEY (vehicle_id, timestamp, source)
+                )
+            """)
+            cur.execute("""
+                INSERT INTO positions_new
+                    (id, vehicle_id, timestamp, collected_at, longitude, latitude,
+                     geom, bearing, speed, is_driving, source)
+                SELECT id, vehicle_id, timestamp, collected_at, longitude, latitude,
+                       geom, bearing, speed, is_driving, 'st_johns'
+                FROM positions
+            """)
+            cur.execute("DROP TABLE positions")
+            cur.execute("ALTER TABLE positions_new RENAME TO positions")
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_positions_time_geo
+                    ON positions (timestamp, latitude, longitude)
+            """)
 
     def upsert_vehicles(
         self, vehicles: list[dict], now: datetime, source: str = "st_johns"
