@@ -1086,6 +1086,7 @@ class PlowApp {
       followVehicleId: null,
       startTime: null,
       animFrame: null,
+      lastRenderTime: 0,
     };
   }
 
@@ -1311,6 +1312,9 @@ class PlowApp {
       this.playback.animFrame = null;
     }
     this.unlockPlaybackUI();
+    // Force a final unthrottled render so the last frame is accurate
+    const vals = timeSliderEl.noUiSlider.get().map(Number);
+    this.renderCoverage(vals[0], vals[1]);
   }
 
   playbackTick() {
@@ -1535,8 +1539,13 @@ class PlowApp {
     this.applyFilters();
   }
 
-  renderCoverage(fromVal, toVal) {
+  renderCoverage(fromVal, toVal, throttle = false) {
     if (!this.coverageData || this.mode !== "coverage") return;
+    if (throttle) {
+      const now = Date.now();
+      if (now - this.playback.lastRenderTime < 100) return;
+      this.playback.lastRenderTime = now;
+    }
     const fromTime = this.sliderToTime(fromVal);
     const toTime = this.sliderToTime(toVal);
     sliderLabel.innerHTML =
@@ -1774,7 +1783,7 @@ btnHeatmap.addEventListener("click", () => app.switchCoverageView("heatmap"));
 // Slider
 timeSliderEl.noUiSlider.on("update", () => {
   const vals = timeSliderEl.noUiSlider.get().map(Number);
-  app.renderCoverage(vals[0], vals[1]);
+  app.renderCoverage(vals[0], vals[1], app.playback.playing);
 });
 
 // Legend source checkboxes
