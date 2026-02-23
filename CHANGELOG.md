@@ -1,5 +1,12 @@
-<!-- changelog-id: 5 -->
+<!-- changelog-id: 6 -->
 # Changelog
+
+## 2026-02-23 — Multi-Source Tracking
+The map now tracks plows from Mount Pearl and the Provincial fleet alongside
+St. John's. Toggle sources on and off from the legend, or zoom into a specific
+city. Coverage playback is significantly faster.
+
+[View changes](https://github.com/jackharrhy/where-the-plow/compare/13e5aff...8bc5101)
 
 ## 2026-02-22 - Address Search
 You can now search for a street address and jump directly to it on the map,
