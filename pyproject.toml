@@ -10,6 +10,7 @@ dependencies = [
     "uvicorn>=0.34",
     "pytz>=2025.2",
     "pydantic-settings>=2.13.1",
+    "pydantic>=2.12.5",
 ]
 
 [project.optional-dependencies]

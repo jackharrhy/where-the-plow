@@ -13,9 +13,6 @@ class Settings(BaseSettings):
     db_path: str = "/data/plow.db"
     log_level: str = "INFO"
 
-    # Polling
-    poll_interval: int = 6  # St. John's AVL poll interval (seconds)
-
     # Source API URLs
     avl_api_url: str = (
         "https://map.stjohns.ca/mapsrv/rest/services/AVL/MapServer/0/query"
@@ -29,6 +26,11 @@ class Settings(BaseSettings):
     source_st_johns_enabled: bool = True
     source_mt_pearl_enabled: bool = True
     source_provincial_enabled: bool = True
+
+    # Source poll intervals (seconds)
+    source_st_johns_poll_interval: int = 6
+    source_mt_pearl_poll_interval: int = 30
+    source_provincial_poll_interval: int = 30
 
 
 settings = Settings()

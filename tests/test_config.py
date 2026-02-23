@@ -5,18 +5,20 @@ from where_the_plow.source_config import SourceConfig, build_sources
 def test_default_settings():
     s = Settings()
     assert s.db_path == "/data/plow.db"
-    assert s.poll_interval == 6
+    assert s.source_st_johns_poll_interval == 6
+    assert s.source_mt_pearl_poll_interval == 30
+    assert s.source_provincial_poll_interval == 30
     assert s.log_level == "INFO"
     assert "MapServer" in s.avl_api_url
 
 
 def test_settings_from_env(monkeypatch):
     monkeypatch.setenv("DB_PATH", "/tmp/test.db")
-    monkeypatch.setenv("POLL_INTERVAL", "10")
+    monkeypatch.setenv("SOURCE_ST_JOHNS_POLL_INTERVAL", "10")
     monkeypatch.setenv("LOG_LEVEL", "DEBUG")
     s = Settings()
     assert s.db_path == "/tmp/test.db"
-    assert s.poll_interval == 10
+    assert s.source_st_johns_poll_interval == 10
     assert s.log_level == "DEBUG"
 
 
@@ -66,7 +68,7 @@ def test_build_sources_uses_settings():
     s = Settings()
     sources = build_sources(s)
     assert sources["st_johns"].api_url == s.avl_api_url
-    assert sources["st_johns"].poll_interval == s.poll_interval
+    assert sources["st_johns"].poll_interval == s.source_st_johns_poll_interval
     assert sources["st_johns"].enabled == s.source_st_johns_enabled
     assert sources["mt_pearl"].api_url == s.mt_pearl_api_url
     assert sources["mt_pearl"].enabled == s.source_mt_pearl_enabled

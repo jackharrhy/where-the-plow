@@ -35,12 +35,14 @@ Either way, the app starts at `http://localhost:8000`. DuckDB data persists to `
 | Variable | Default | Description |
 |---|---|---|
 | `DB_PATH` | `/data/plow.db` | Path to DuckDB database file |
-| `POLL_INTERVAL` | `6` | Seconds between AVL API polls |
 | `LOG_LEVEL` | `INFO` | Python log level |
 | `AVL_API_URL` | St. John's AVL endpoint | Override the St. John's API URL |
 | `SOURCE_ST_JOHNS_ENABLED` | `true` | Enable/disable St. John's source |
+| `SOURCE_ST_JOHNS_POLL_INTERVAL` | `6` | St. John's poll interval (seconds) |
 | `SOURCE_MT_PEARL_ENABLED` | `true` | Enable/disable Mount Pearl source |
+| `SOURCE_MT_PEARL_POLL_INTERVAL` | `30` | Mount Pearl poll interval (seconds) |
 | `SOURCE_PROVINCIAL_ENABLED` | `true` | Enable/disable Provincial source |
+| `SOURCE_PROVINCIAL_POLL_INTERVAL` | `30` | Provincial poll interval (seconds) |
 | `MT_PEARL_API_URL` | Mount Pearl AVL endpoint | Override Mount Pearl API URL |
 | `PROVINCIAL_API_URL` | Provincial AVL endpoint | Override Provincial API URL |
 
