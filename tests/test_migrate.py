@@ -416,3 +416,79 @@ def test_002_migrates_prod_db(tmp_path):
     assert count > 0  # og-prod-plow.db has ~917k rows
 
     conn.close()
+
+
+def test_already_migrated_db_gets_stamped(tmp_path):
+    """A DB that already has the full schema gets stamped without errors."""
+    conn = duckdb.connect(str(tmp_path / "already.db"))
+    conn.execute("INSTALL spatial; LOAD spatial")
+
+    # Simulate a DB created by the old init() — has everything
+    # including source columns, but no schema_version table.
+    conn.execute("CREATE SEQUENCE IF NOT EXISTS positions_seq")
+    conn.execute("CREATE SEQUENCE IF NOT EXISTS viewports_seq")
+    conn.execute("CREATE SEQUENCE IF NOT EXISTS signups_seq")
+    conn.execute("""
+        CREATE TABLE vehicles (
+            vehicle_id VARCHAR NOT NULL,
+            description VARCHAR,
+            vehicle_type VARCHAR,
+            first_seen TIMESTAMPTZ NOT NULL,
+            last_seen TIMESTAMPTZ NOT NULL,
+            source VARCHAR NOT NULL DEFAULT 'st_johns',
+            PRIMARY KEY (vehicle_id, source)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE positions (
+            id BIGINT DEFAULT nextval('positions_seq'),
+            vehicle_id VARCHAR NOT NULL,
+            timestamp TIMESTAMPTZ NOT NULL,
+            collected_at TIMESTAMPTZ NOT NULL,
+            longitude DOUBLE NOT NULL,
+            latitude DOUBLE NOT NULL,
+            geom GEOMETRY,
+            bearing INTEGER,
+            speed DOUBLE,
+            is_driving VARCHAR,
+            source VARCHAR NOT NULL DEFAULT 'st_johns',
+            PRIMARY KEY (vehicle_id, timestamp, source)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE viewports (
+            id BIGINT DEFAULT nextval('viewports_seq') PRIMARY KEY,
+            timestamp TIMESTAMPTZ NOT NULL DEFAULT now(),
+            ip VARCHAR,
+            user_agent VARCHAR,
+            zoom DOUBLE NOT NULL,
+            center_lng DOUBLE NOT NULL,
+            center_lat DOUBLE NOT NULL,
+            sw_lng DOUBLE NOT NULL,
+            sw_lat DOUBLE NOT NULL,
+            ne_lng DOUBLE NOT NULL,
+            ne_lat DOUBLE NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE signups (
+            id BIGINT DEFAULT nextval('signups_seq') PRIMARY KEY,
+            timestamp TIMESTAMPTZ NOT NULL DEFAULT now(),
+            email VARCHAR NOT NULL,
+            ip VARCHAR,
+            user_agent VARCHAR,
+            notify_plow BOOLEAN NOT NULL DEFAULT FALSE,
+            notify_projects BOOLEAN NOT NULL DEFAULT FALSE,
+            notify_siliconharbour BOOLEAN NOT NULL DEFAULT FALSE,
+            note VARCHAR
+        )
+    """)
+
+    migrations_dir = (
+        Path(__file__).parent.parent / "src" / "where_the_plow" / "migrations"
+    )
+    run_migrations(conn, migrations_dir)
+
+    # Should be stamped at version 2 with no errors
+    assert get_version(conn) == 2
+    conn.close()
