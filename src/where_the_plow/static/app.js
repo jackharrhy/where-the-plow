@@ -817,7 +817,7 @@ function buildMiniTrails(data) {
           type: "LineString",
           coordinates: [trail[i], trail[i + 1]],
         },
-        properties: { color, opacity, vehicle_type: f.properties.vehicle_type },
+        properties: { color, opacity, vehicle_type: f.properties.vehicle_type, source: f.properties.source },
       });
     }
   }
@@ -885,6 +885,7 @@ const detailType = document.getElementById("detail-type");
 const detailSpeed = document.getElementById("detail-speed");
 const detailBearing = document.getElementById("detail-bearing");
 const detailUpdated = document.getElementById("detail-updated");
+const detailSource = document.getElementById("detail-source");
 
 /* ── Vehicle trails ────────────────────────────────── */
 
@@ -931,6 +932,7 @@ function buildTrailSegments(features) {
         seg_opacity: features[i].properties.trail_opacity,
         seg_color: features[i].properties.trail_color,
         vehicle_type: features[i].properties.vehicle_type,
+        source: features[i].properties.source,
       },
     });
   }
@@ -985,7 +987,8 @@ function setPresetActive(value) {
 }
 
 function showLegend(type) {
-  // Vehicle legend (with type checkboxes) is always visible
+  // Source and vehicle legends are always visible
+  document.getElementById("legend-sources").style.display = "";
   document.getElementById("legend-vehicles").style.display = "";
   document.getElementById("legend-heatmap").style.display =
     type === "heatmap" ? "" : "none";
@@ -1023,6 +1026,10 @@ class PlowApp {
     // Mode
     this.mode = "realtime";
 
+    // Sources
+    this.sources = {};
+    this.enabledSources = new Set();
+
     // Realtime
     this.refreshInterval = null;
     this.activeVehicleId = null;
@@ -1045,6 +1052,74 @@ class PlowApp {
       startTime: null,
       animFrame: null,
     };
+  }
+
+  /* ── Sources ─────────────────────────────────────── */
+
+  async loadSources() {
+    try {
+      const resp = await fetch("/sources");
+      if (!resp.ok) throw new Error("Failed to load sources");
+      this.sources = await resp.json();
+    } catch (err) {
+      console.error("Failed to load sources:", err);
+      this.sources = {};
+    }
+
+    // Enable all sources by default
+    this.enabledSources = new Set(Object.keys(this.sources));
+
+    // Build legend checkboxes
+    const container = document.getElementById("legend-sources");
+    container.innerHTML = "";
+
+    const sourceKeys = Object.keys(this.sources);
+    if (sourceKeys.length <= 1) return; // Don't show source toggles for single source
+
+    const title = document.createElement("div");
+    title.className = "legend-section-title";
+    title.textContent = "Sources";
+    container.appendChild(title);
+
+    for (const key of sourceKeys) {
+      const src = this.sources[key];
+      const label = document.createElement("label");
+      label.className = "legend-row";
+      label.dataset.source = key;
+
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = true;
+      cb.className = "legend-check";
+
+      const text = document.createTextNode(src.display_name);
+      label.appendChild(text);
+      label.appendChild(cb);
+      container.appendChild(label);
+    }
+
+    // Also add a "Types" section title to the vehicle legend (idempotent)
+    const vehicleLegend = document.getElementById("legend-vehicles");
+    if (!vehicleLegend.querySelector(".legend-section-title")) {
+      const typeTitle = document.createElement("div");
+      typeTitle.className = "legend-section-title";
+      typeTitle.textContent = "Types";
+      vehicleLegend.insertBefore(typeTitle, vehicleLegend.firstChild);
+    }
+  }
+
+  getSourceDisplayName(sourceKey) {
+    const src = this.sources[sourceKey];
+    return src ? src.display_name : sourceKey;
+  }
+
+  buildSourceFilter() {
+    const allSources = Object.keys(this.sources);
+    if (allSources.length <= 1) return null; // No filter needed for single source
+    if (this.enabledSources.size === allSources.length) return null; // All enabled
+    if (this.enabledSources.size === 0) return false; // Nothing visible
+
+    return ["in", ["get", "source"], ["literal", [...this.enabledSources]]];
   }
 
   /* ── Type filtering ─────────────────────────────── */
@@ -1087,8 +1162,21 @@ class PlowApp {
     return ["any", ...parts];
   }
 
-  applyTypeFilters() {
-    this.map.setTypeFilter(this.buildTypeFilter());
+  applyFilters() {
+    const sourceFilter = this.buildSourceFilter();
+    const typeFilter = this.buildTypeFilter();
+
+    // null = show everything (no filter), false = hide everything
+    let combined;
+    if (sourceFilter === false || typeFilter === false) {
+      combined = false;
+    } else if (sourceFilter && typeFilter) {
+      combined = ["all", sourceFilter, typeFilter];
+    } else {
+      combined = sourceFilter || typeFilter;
+    }
+
+    this.map.setTypeFilter(combined);
   }
 
   /* -- Playback UI locking ---------------------------------- */
@@ -1207,6 +1295,7 @@ class PlowApp {
       const vid = f.properties.vehicle_id;
       if (seen.has(vid)) continue;
       if (!this.isTypeVisible(f.properties.vehicle_type)) continue;
+      if (!this.isSourceVisible(f.properties.source)) continue;
       seen.set(vid, f.properties.description);
     }
 
@@ -1225,6 +1314,12 @@ class PlowApp {
       select.value = "";
       this.playback.followVehicleId = null;
     }
+  }
+
+  isSourceVisible(source) {
+    const allSources = Object.keys(this.sources);
+    if (allSources.length <= 1) return true;
+    return this.enabledSources.has(source);
   }
 
   isTypeVisible(vehicleType) {
@@ -1345,7 +1440,7 @@ class PlowApp {
     }
     coverageLoading.style.display = "none";
     this.renderCoverage(0, 1000);
-    this.applyTypeFilters();
+    this.applyFilters();
     this.populateFollowDropdown();
     btnPlay.disabled = false;
   }
@@ -1365,7 +1460,7 @@ class PlowApp {
     showLegend(view === "heatmap" ? "heatmap" : "vehicles");
     const vals = timeSliderEl.noUiSlider.get().map(Number);
     this.renderCoverage(vals[0], vals[1]);
-    this.applyTypeFilters();
+    this.applyFilters();
   }
 
   renderCoverage(fromVal, toVal) {
@@ -1420,6 +1515,7 @@ class PlowApp {
             seg_opacity: opacity,
             seg_color: color,
             vehicle_type: feature.properties.vehicle_type,
+            source: feature.properties.source,
           },
         });
       }
@@ -1445,7 +1541,7 @@ class PlowApp {
         pointFeatures.push({
           type: "Feature",
           geometry: { type: "Point", coordinates: coords[i] },
-          properties: { vehicle_type: feature.properties.vehicle_type },
+          properties: { vehicle_type: feature.properties.vehicle_type, source: feature.properties.source },
         });
       }
     }
@@ -1503,6 +1599,7 @@ class PlowApp {
     detailSpeed.textContent = "Speed: " + p.speed + " km/h";
     detailBearing.textContent = "Bearing: " + p.bearing + "\u00B0";
     detailUpdated.textContent = "Updated: " + formatTimestamp(p.timestamp);
+    detailSource.textContent = "Source: " + this.getSourceDisplayName(p.source);
     vehicleHint.style.display = "none";
     detailPanel.style.display = "block";
   }
@@ -1540,7 +1637,7 @@ class PlowApp {
     };
 
     this.map.showTrail(trailData, lineData);
-    this.applyTypeFilters();
+    this.applyFilters();
   }
 
   async refreshTrail() {
@@ -1606,9 +1703,23 @@ timeSliderEl.noUiSlider.on("update", () => {
   app.renderCoverage(vals[0], vals[1]);
 });
 
+// Legend source checkboxes
+document.getElementById("legend-sources").addEventListener("change", (e) => {
+  const row = e.target.closest(".legend-row");
+  if (!row) return;
+  const sourceKey = row.dataset.source;
+  if (e.target.checked) {
+    app.enabledSources.add(sourceKey);
+  } else {
+    app.enabledSources.delete(sourceKey);
+  }
+  app.applyFilters();
+  app.populateFollowDropdown();
+});
+
 // Legend type checkboxes
 document.getElementById("legend-vehicles").addEventListener("change", () => {
-  app.applyTypeFilters();
+  app.applyFilters();
   app.populateFollowDropdown();
 });
 
@@ -1627,12 +1738,23 @@ document
 /* ── Map load: sources, layers, handlers ───────────── */
 
 plowMap.on("load", async () => {
+  await app.loadSources();
+
   const rawData = await fetchVehicles();
   const data = filterRecentFeatures(rawData);
   updateVehicleCount(data);
 
   plowMap.initVehicles(data);
   plowMap.initMiniTrails(buildMiniTrails(data));
+
+  // Fit map bounds to all visible vehicles
+  if (data.features.length > 0) {
+    const bounds = new maplibregl.LngLatBounds();
+    for (const f of data.features) {
+      bounds.extend(f.geometry.coordinates);
+    }
+    plowMap.map.fitBounds(bounds, { padding: 50, maxZoom: 13, duration: 0 });
+  }
 
   plowMap.on("mouseenter", "vehicle-circles", () => {
     plowMap.getCanvas().style.cursor = "pointer";

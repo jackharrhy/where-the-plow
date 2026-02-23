@@ -454,6 +454,24 @@ body {
     flex-shrink: 0;
 }
 
+#legend-sources {
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: var(--border-subtle);
+}
+
+#legend-sources:empty {
+    display: none;
+}
+
+.legend-section-title {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-muted);
+    margin-bottom: 4px;
+}
+
 .legend-gradient {
     height: 10px;
     border-radius: 4px;

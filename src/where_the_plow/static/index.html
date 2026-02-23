@@ -107,6 +107,7 @@
                 <div class="detail-row" id="detail-speed"></div>
                 <div class="detail-row" id="detail-bearing"></div>
                 <div class="detail-row" id="detail-updated"></div>
+                <div class="detail-row" id="detail-source"></div>
             </div>
             <div id="coverage-panel">
                 <div class="coverage-hint">
@@ -165,6 +166,7 @@
                     </button>
                 </div>
                 <div id="legend-body">
+                    <div id="legend-sources"></div>
                     <div id="legend-vehicles">
                         <label
                             class="legend-row"
@@ -232,8 +234,15 @@
                     href="https://map.stjohns.ca/avl/"
                     target="_blank"
                     rel="noopener"
-                    >City of St. John's AVL</a
-                ><br />
+                    >St. John's</a
+                >,
+                <a
+                    href="https://www.mountpearl.ca"
+                    target="_blank"
+                    rel="noopener"
+                    >Mount Pearl</a
+                >
+                &amp; Provincial sources<br />
                 <a
                     href="https://github.com/jackharrhy/where-the-plow"
                     target="_blank"
@@ -254,22 +263,25 @@
                 <button id="welcome-close" title="Close">&times;</button>
                 <h2>where the plow</h2>
                 <p>
-                    Snowplow activity in
-                    <strong>St. John's, Newfoundland</strong>. See which streets
-                    have been plowed, track individual vehicles in realtime, and
-                    explore historical coverage.
+                    Snowplow activity across
+                    <strong>St. John's</strong>,
+                    <strong>Mount Pearl</strong>, and
+                    <strong>Provincial</strong> routes in Newfoundland.
+                    See which streets have been plowed, track individual
+                    vehicles in realtime, and explore historical coverage.
                 </p>
                 <div class="welcome-section">
                     <h4>Data</h4>
                     <p>
-                        Vehicle positions are polled every 6 seconds from the
+                        Vehicle positions are polled from multiple sources
+                        &mdash; the
                         <a
                             href="https://map.stjohns.ca/avl/"
                             target="_blank"
                             rel="noopener"
                             >City of St. John's AVL</a
-                        >
-                        system and stored for historical playback.
+                        >, Mount Pearl, and Provincial tracking systems &mdash;
+                        and stored for historical playback.
                     </p>
                 </div>
                 <div class="welcome-section">
@@ -287,7 +299,7 @@
                         </li>
                         <li>
                             Use the <strong>legend checkboxes</strong> to filter
-                            by vehicle type.
+                            by data source or vehicle type.
                         </li>
                     </ul>
                 </div>
