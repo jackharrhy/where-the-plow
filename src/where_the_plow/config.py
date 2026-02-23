@@ -1,72 +1,35 @@
-import os
-from dataclasses import dataclass
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from where_the_plow.source_config import SourceConfig, build_sources
 
 
-@dataclass
-class SourceConfig:
-    name: str
-    display_name: str
-    api_url: str
-    poll_interval: int  # seconds
-    center: tuple[float, float]  # (lng, lat)
-    zoom: int
-    parser: str  # "avl" or "aatracking"
-    enabled: bool = True
-    referer: str | None = None
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+    )
 
+    # Application
+    db_path: str = "/data/plow.db"
+    log_level: str = "INFO"
 
-SOURCES: dict[str, SourceConfig] = {
-    "st_johns": SourceConfig(
-        name="st_johns",
-        display_name="St. John's",
-        api_url=os.environ.get(
-            "AVL_API_URL",
-            "https://map.stjohns.ca/mapsrv/rest/services/AVL/MapServer/0/query",
-        ),
-        poll_interval=int(os.environ.get("POLL_INTERVAL", "6")),
-        center=(-52.71, 47.56),
-        zoom=12,
-        parser="avl",
-        referer="https://map.stjohns.ca/avl/",
-        enabled=os.environ.get("SOURCE_ST_JOHNS_ENABLED", "true").lower() == "true",
-    ),
-    "mt_pearl": SourceConfig(
-        name="mt_pearl",
-        display_name="Mount Pearl",
-        api_url=os.environ.get(
-            "MT_PEARL_API_URL",
-            "https://gps5.aatracking.com/api/MtPearlPortal/GetPlows",
-        ),
-        poll_interval=30,
-        center=(-52.81, 47.52),
-        zoom=13,
-        parser="aatracking",
-        enabled=os.environ.get("SOURCE_MT_PEARL_ENABLED", "true").lower() == "true",
-    ),
-    "provincial": SourceConfig(
-        name="provincial",
-        display_name="Provincial",
-        api_url=os.environ.get(
-            "PROVINCIAL_API_URL",
-            "https://gps5.aatracking.com/api/NewfoundlandPortal/GetPlows",
-        ),
-        poll_interval=30,
-        center=(-53.5, 48.5),
-        zoom=7,
-        parser="aatracking",
-        enabled=os.environ.get("SOURCE_PROVINCIAL_ENABLED", "true").lower() == "true",
-    ),
-}
+    # Polling
+    poll_interval: int = 6  # St. John's AVL poll interval (seconds)
 
+    # Source API URLs
+    avl_api_url: str = (
+        "https://map.stjohns.ca/mapsrv/rest/services/AVL/MapServer/0/query"
+    )
+    mt_pearl_api_url: str = "https://gps5.aatracking.com/api/MtPearlPortal/GetPlows"
+    provincial_api_url: str = (
+        "https://gps5.aatracking.com/api/NewfoundlandPortal/GetPlows"
+    )
 
-class Settings:
-    def __init__(self):
-        self.db_path: str = os.environ.get("DB_PATH", "/data/plow.db")
-        self.poll_interval: int = int(os.environ.get("POLL_INTERVAL", "6"))
-        self.log_level: str = os.environ.get("LOG_LEVEL", "INFO")
-        # Legacy fields — still referenced by client.py for the AVL parser
-        self.avl_api_url: str = SOURCES["st_johns"].api_url
-        self.avl_referer: str = SOURCES["st_johns"].referer or ""
+    # Source enable/disable
+    source_st_johns_enabled: bool = True
+    source_mt_pearl_enabled: bool = True
+    source_provincial_enabled: bool = True
 
 
 settings = Settings()
+SOURCES: dict[str, SourceConfig] = build_sources(settings)

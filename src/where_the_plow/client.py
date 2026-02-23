@@ -2,8 +2,6 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
-from where_the_plow.config import settings
-
 # The AVL API returns epoch-millisecond timestamps that represent
 # Newfoundland Standard Time (UTC-3:30) but are encoded as if they were UTC.
 # To get the real UTC time we must add the 3:30 offset back.
@@ -50,24 +48,6 @@ def parse_avl_response(data: dict) -> tuple[list[dict], list[dict]]:
         )
 
     return vehicles, positions
-
-
-async def fetch_vehicles(client: httpx.AsyncClient) -> dict:
-    params = {
-        "f": "json",
-        "outFields": "ID,Description,VehicleType,LocationDateTime,Bearing,Speed,isDriving",
-        "outSR": "4326",
-        "returnGeometry": "true",
-        "where": "1=1",
-    }
-    headers = {
-        "Referer": settings.avl_referer,
-    }
-    resp = await client.get(
-        settings.avl_api_url, params=params, headers=headers, timeout=10
-    )
-    resp.raise_for_status()
-    return resp.json()
 
 
 def _safe_bearing(value) -> int:

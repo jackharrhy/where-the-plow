@@ -6,12 +6,11 @@ import httpx
 
 from where_the_plow.client import (
     fetch_source,
-    fetch_vehicles,
     parse_avl_response,
     parse_aatracking_response,
 )
+from where_the_plow.config import SOURCES
 from where_the_plow.db import Database
-from where_the_plow.config import settings, SOURCES
 from where_the_plow.snapshot import build_realtime_snapshot
 
 logger = logging.getLogger(__name__)

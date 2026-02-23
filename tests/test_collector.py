@@ -1,15 +1,15 @@
 import asyncio
 import os
 import tempfile
-from dataclasses import dataclass
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 
-from where_the_plow.db import Database
 from where_the_plow.client import fetch_source
 from where_the_plow.collector import poll_source, process_poll
+from where_the_plow.db import Database
+from where_the_plow.source_config import SourceConfig
 
 
 SAMPLE_AVL_RESPONSE = {
@@ -101,17 +101,19 @@ def test_process_poll_unknown_parser():
 # ── Helpers for async poll_source tests ──────────────────────────────
 
 
-@dataclass
-class FakeSourceConfig:
-    """Minimal source config for testing poll_source."""
-
-    name: str = "test_source"
-    display_name: str = "Test Source"
-    poll_interval: int = 0  # no delay in tests
-    parser: str = "aatracking"
-    api_url: str = "https://fake.example.com/api"
-    referer: str | None = None
-    enabled: bool = True
+def _test_source_config(**overrides) -> SourceConfig:
+    """Build a SourceConfig for testing with sensible defaults."""
+    defaults = dict(
+        name="test_source",
+        display_name="Test Source",
+        poll_interval=0,
+        parser="aatracking",
+        api_url="https://fake.example.com/api",
+        center=(-52.8, 47.5),
+        zoom=12,
+    )
+    defaults.update(overrides)
+    return SourceConfig(**defaults)
 
 
 def _make_aatracking_response(vehicle_id=17186, heading=90):
@@ -184,7 +186,7 @@ async def test_poll_source_recovers_from_http_error():
     """A single HTTP error should not kill the poll loop — it logs and retries."""
     db, path = make_db()
     store = {}
-    config = FakeSourceConfig()
+    config = _test_source_config()
 
     effects = [
         httpx.HTTPStatusError(
@@ -210,7 +212,7 @@ async def test_poll_source_recovers_from_timeout():
     """Network timeouts should not kill the poll loop."""
     db, path = make_db()
     store = {}
-    config = FakeSourceConfig()
+    config = _test_source_config()
 
     effects = [
         httpx.ConnectTimeout("Connection timed out"),
@@ -232,7 +234,7 @@ async def test_poll_source_recovers_from_malformed_json():
     """If the API returns valid HTTP but unparseable data, poll should continue."""
     db, path = make_db()
     store = {}
-    config = FakeSourceConfig()
+    config = _test_source_config()
 
     # A response that's valid JSON but not the expected list format
     # will cause process_poll/parser to crash — poll_source should catch it
@@ -255,7 +257,7 @@ async def test_poll_source_updates_store_on_success():
     """Successful polls should update store['realtime'][source_name]."""
     db, path = make_db()
     store = {}
-    config = FakeSourceConfig()
+    config = _test_source_config()
 
     effects = [_make_aatracking_response()]
 
@@ -279,7 +281,7 @@ async def test_poll_source_store_not_updated_on_error():
             "test_source": {"type": "FeatureCollection", "features": [{"old": True}]}
         }
     }
-    config = FakeSourceConfig()
+    config = _test_source_config()
 
     effects = [
         httpx.HTTPStatusError(
@@ -302,7 +304,7 @@ async def test_poll_source_cancellation_is_clean():
     """CancelledError should propagate — not be swallowed by the broad except."""
     db, path = make_db()
     store = {}
-    config = FakeSourceConfig()
+    config = _test_source_config()
 
     # Provide a response that will succeed, but we cancel immediately
     async def slow_fetch(client, source):
@@ -325,7 +327,7 @@ async def test_poll_source_cancellation_is_clean():
 
 async def test_fetch_source_raises_on_http_error():
     """fetch_source should propagate HTTP errors (raise_for_status)."""
-    config = FakeSourceConfig(
+    config = _test_source_config(
         parser="aatracking", api_url="https://fake.example.com/api"
     )
 
@@ -339,7 +341,7 @@ async def test_fetch_source_raises_on_http_error():
 
 async def test_fetch_source_avl_sends_referer():
     """AVL sources should send the Referer header."""
-    config = FakeSourceConfig(
+    config = _test_source_config(
         parser="avl",
         api_url="https://map.stjohns.ca/arcgis/rest/services/test",
         referer="https://map.stjohns.ca/avl/",
