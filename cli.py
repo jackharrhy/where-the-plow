@@ -1,5 +1,8 @@
 """Dev CLI for where-the-plow."""
 
+import csv
+import html as html_mod
+import io
 import re
 import shutil
 import subprocess
@@ -13,6 +16,7 @@ COMMANDS = {
     "changelog": "Convert CHANGELOG.md to an HTML fragment",
     "db-pull": "Pull production DB into data/backups/ (stops/starts prod)",
     "db-use-prod": "Copy a backup to data/plow.db for local dev",
+    "signups": "Export newsletter signups to CSV and HTML",
 }
 
 APP = "where_the_plow.main:app"
@@ -247,6 +251,162 @@ def changelog():
     print(f"Wrote changelog.html (changelog-id: {changelog_id})")
 
 
+def signups():
+    import duckdb
+
+    db_path = ROOT / "data" / "plow.db"
+    if not db_path.exists():
+        print(f"Database not found: {db_path}", file=sys.stderr)
+        sys.exit(1)
+
+    conn = duckdb.connect(str(db_path), read_only=True)
+    rows = conn.execute(
+        """
+        SELECT id, timestamp, email, notify_plow, notify_projects,
+               notify_siliconharbour, note, ip, user_agent
+        FROM signups
+        ORDER BY timestamp DESC
+        """
+    ).fetchall()
+    columns = [
+        "id",
+        "timestamp",
+        "email",
+        "notify_plow",
+        "notify_projects",
+        "notify_siliconharbour",
+        "note",
+        "ip",
+        "user_agent",
+    ]
+    conn.close()
+
+    out_dir = ROOT / "data"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = out_dir / "signups.csv"
+    html_path = out_dir / "signups.html"
+
+    # ── CSV ──
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(columns)
+    writer.writerows(rows)
+    csv_path.write_text(buf.getvalue())
+
+    # ── HTML ──
+    def _esc(val):
+        if val is None:
+            return '<span class="null">-</span>'
+        if isinstance(val, bool):
+            return "yes" if val else "no"
+        return html_mod.escape(str(val))
+
+    def _bool_badge(val):
+        if val:
+            return '<span class="badge yes">yes</span>'
+        return '<span class="badge no">no</span>'
+
+    cards_html = []
+    for row in rows:
+        r = dict(zip(columns, row))
+        flags = []
+        if r["notify_plow"]:
+            flags.append("Plow alerts")
+        if r["notify_projects"]:
+            flags.append("Other projects")
+        if r["notify_siliconharbour"]:
+            flags.append("Silicon Harbour")
+        flags_str = ", ".join(flags) if flags else "None"
+
+        note_block = ""
+        if r["note"]:
+            note_block = (
+                f'<div class="note">'
+                f'<div class="note-label">Note</div>'
+                f"{_esc(r['note'])}"
+                f"</div>"
+            )
+
+        cards_html.append(f"""\
+<div class="card">
+  <div class="card-header">
+    <span class="email">{_esc(r["email"])}</span>
+    <span class="id">#{r["id"]}</span>
+  </div>
+  <div class="meta">
+    <span>{_esc(r["timestamp"])}</span>
+    <span>{_esc(r["ip"])}</span>
+  </div>
+  <div class="flags">Subscriptions: {flags_str}</div>
+  {note_block}
+  <div class="ua">{_esc(r["user_agent"])}</div>
+</div>""")
+
+    page = f"""\
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Signups ({len(rows)})</title>
+<style>
+  :root {{
+    --bg: #0f172a;
+    --card-bg: #1e293b;
+    --border: #334155;
+    --text: #e2e8f0;
+    --text-muted: #94a3b8;
+    --accent: #60a5fa;
+  }}
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{
+    font-family: system-ui, -apple-system, sans-serif;
+    background: var(--bg); color: var(--text);
+    padding: 24px; line-height: 1.5;
+  }}
+  h1 {{ font-size: 20px; margin-bottom: 16px; }}
+  h1 span {{ color: var(--text-muted); font-weight: 400; }}
+  .cards {{ display: flex; flex-direction: column; gap: 12px; max-width: 720px; }}
+  .card {{
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px 18px;
+  }}
+  .card-header {{ display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }}
+  .email {{ font-weight: 600; color: var(--accent); }}
+  .id {{ color: var(--text-muted); font-size: 12px; }}
+  .meta {{ font-size: 12px; color: var(--text-muted); display: flex; gap: 16px; margin-bottom: 6px; }}
+  .flags {{ font-size: 13px; margin-bottom: 6px; }}
+  .badge {{
+    display: inline-block; padding: 1px 6px; border-radius: 4px;
+    font-size: 11px; font-weight: 600;
+  }}
+  .badge.yes {{ background: rgba(34,197,94,0.2); color: #4ade80; }}
+  .badge.no {{ background: rgba(239,68,68,0.15); color: #f87171; }}
+  .note {{
+    background: rgba(255,255,255,0.05); border-radius: 6px;
+    padding: 8px 10px; margin: 6px 0; font-size: 13px;
+    white-space: pre-wrap;
+  }}
+  .note-label {{ font-size: 11px; color: var(--text-muted); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.05em; }}
+  .ua {{ font-size: 11px; color: var(--text-muted); word-break: break-all; }}
+  .null {{ color: var(--text-muted); }}
+</style>
+</head>
+<body>
+<h1>Newsletter Signups <span>({len(rows)})</span></h1>
+<div class="cards">
+{"".join(cards_html)}
+</div>
+</body>
+</html>
+"""
+    html_path.write_text(page)
+
+    print(f"Exported {len(rows)} signups")
+    print(f"  CSV:  {csv_path.relative_to(ROOT)}")
+    print(f"  HTML: {html_path.relative_to(ROOT)}")
+
+
 def usage():
     print("Usage: uv run cli.py <command>\n")
     print("Commands:")
@@ -266,6 +426,7 @@ def main():
         "changelog": changelog,
         "db-pull": db_pull,
         "db-use-prod": db_use_prod,
+        "signups": signups,
     }
     dispatch[cmd]()
 
