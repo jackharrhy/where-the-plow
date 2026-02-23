@@ -434,26 +434,31 @@ body {
 .legend-source-row {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 5px;
     margin-bottom: 4px;
 }
 
 .legend-zoom-btn {
-    background: none;
-    border: 1px solid var(--color-text-muted);
-    border-radius: 3px;
-    color: var(--color-text-secondary);
-    font-size: 0.72rem;
+    background: transparent;
+    border: none;
+    color: var(--color-text-muted);
+    font-family: var(--font-sans);
+    font-size: 0.78rem;
     line-height: 1;
-    padding: 2px 3px;
+    padding: 0;
+    margin: 0;
     cursor: pointer;
     flex-shrink: 0;
-    transition: color 0.15s, border-color 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    transition: color 0.15s;
 }
 
 .legend-zoom-btn:hover {
     color: var(--color-accent);
-    border-color: var(--color-accent);
 }
 
 .legend-row {
