@@ -1877,7 +1877,7 @@ document
 /* ── Coverage: re-render on pan/zoom ───────────────── */
 
 let coverageMoveTimeout = null;
-plowMap.map.on("moveend", () => {
+plowMap.on("moveend", () => {
   if (app.mode !== "coverage" || !app.coverageData) return;
   if (app.playback.playing) return; // playback handles its own rendering
   clearTimeout(coverageMoveTimeout);
