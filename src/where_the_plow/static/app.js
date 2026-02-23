@@ -1411,11 +1411,11 @@ class PlowApp {
     for (const feature of this.coverageData.features) {
       if (feature.properties.vehicle_id !== vehicleId) continue;
       const coords = feature.geometry.coordinates;
-      const timestamps = feature.properties.timestamps;
+      const epochMs = feature.properties._epochMs;
 
-      for (let i = 0; i < timestamps.length - 1; i++) {
-        const t0 = new Date(timestamps[i]).getTime();
-        const t1 = new Date(timestamps[i + 1]).getTime();
+      for (let i = 0; i < epochMs.length - 1; i++) {
+        const t0 = epochMs[i];
+        const t1 = epochMs[i + 1];
         if (timeMs >= t0 && timeMs <= t1) {
           const frac = (timeMs - t0) / (t1 - t0);
           return [
@@ -1500,6 +1500,12 @@ class PlowApp {
         { signal },
       );
       this.coverageData = await resp.json();
+      // Pre-parse timestamp strings to epoch ms (once, not per frame)
+      for (const feature of this.coverageData.features) {
+        feature.properties._epochMs = feature.properties.timestamps.map(
+          (t) => new Date(t).getTime()
+        );
+      }
     } catch (err) {
       if (err.name === "AbortError") return;
       throw err;
@@ -1554,19 +1560,20 @@ class PlowApp {
 
   renderCoverageLines(fromTime, toTime) {
     const fromMs = fromTime.getTime();
-    const rangeMs = toTime.getTime() - fromMs;
+    const toMs = toTime.getTime();
+    const rangeMs = toMs - fromMs;
 
     const segmentFeatures = [];
     for (const feature of this.coverageData.features) {
       const coords = feature.geometry.coordinates;
-      const timestamps = feature.properties.timestamps;
+      const epochMs = feature.properties._epochMs;
       const color = vehicleColor(feature.properties.vehicle_type);
 
       for (let i = 0; i < coords.length - 1; i++) {
-        const tMs = new Date(timestamps[i]).getTime();
-        const tNextMs = new Date(timestamps[i + 1]).getTime();
+        const tMs = epochMs[i];
+        const tNextMs = epochMs[i + 1];
         if (tMs < fromMs) continue;
-        if (tNextMs > toTime.getTime()) break;
+        if (tNextMs > toMs) break;
 
         const progress = rangeMs > 0 ? (tMs - fromMs) / rangeMs : 1;
         const opacity = 0.15 + progress * 0.65;
@@ -1599,9 +1606,9 @@ class PlowApp {
     const pointFeatures = [];
     for (const feature of this.coverageData.features) {
       const coords = feature.geometry.coordinates;
-      const timestamps = feature.properties.timestamps;
+      const epochMs = feature.properties._epochMs;
       for (let i = 0; i < coords.length; i++) {
-        const tMs = new Date(timestamps[i]).getTime();
+        const tMs = epochMs[i];
         if (tMs < fromMs) continue;
         if (tMs > toMs) break;
         pointFeatures.push({
