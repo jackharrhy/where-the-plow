@@ -1301,6 +1301,7 @@ class PlowApp {
 
     this.playback.playing = true;
     this.playback.startTime = Date.now();
+    this.playback.lastRenderTime = 0;
     this.lockPlaybackUI();
     this.playbackTick();
   }
@@ -1341,9 +1342,7 @@ class PlowApp {
     }
 
     if (progress >= 1) {
-      this.playback.playing = false;
-      this.playback.animFrame = null;
-      this.unlockPlaybackUI();
+      this.stopPlayback();
       return;
     }
 
