@@ -1597,7 +1597,7 @@ class PlowApp {
 
     const segmentFeatures = [];
     for (const feature of this.coverageData.features) {
-      // Skip sources not visible at this zoom level
+      // Fail-open: unknown sources are always shown (no config → no zoom gate)
       const srcConfig = this.sources[feature.properties.source];
       if (srcConfig && zoom < srcConfig.min_coverage_zoom) continue;
       const coords = feature.geometry.coordinates;
@@ -1646,7 +1646,7 @@ class PlowApp {
 
     const pointFeatures = [];
     for (const feature of this.coverageData.features) {
-      // Skip sources not visible at this zoom level
+      // Fail-open: unknown sources are always shown (no config → no zoom gate)
       const srcConfig = this.sources[feature.properties.source];
       if (srcConfig && zoom < srcConfig.min_coverage_zoom) continue;
       const coords = feature.geometry.coordinates;
