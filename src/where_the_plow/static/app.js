@@ -724,12 +724,37 @@ class PlowMap {
   }
 }
 
+/* ── Map view persistence ──────────────────────────── */
+
+const MAP_VIEW_KEY = "wtp-map-view";
+
+function saveMapView() {
+  const c = plowMap.getCenter();
+  const z = plowMap.getZoom();
+  localStorage.setItem(
+    MAP_VIEW_KEY,
+    JSON.stringify({ center: [c.lng, c.lat], zoom: z })
+  );
+}
+
+function loadMapView() {
+  try {
+    const raw = localStorage.getItem(MAP_VIEW_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw);
+    if (Array.isArray(v.center) && typeof v.zoom === "number") return v;
+  } catch {}
+  return null;
+}
+
 /* ── Map init ──────────────────────────────────────── */
+
+const savedView = loadMapView();
 
 const plowMap = new PlowMap("map", {
   style: "https://tiles.openfreemap.org/styles/liberty",
-  center: [-52.71, 47.56],
-  zoom: 12,
+  center: savedView ? savedView.center : [-52.71, 47.56],
+  zoom: savedView ? savedView.zoom : 12,
 });
 
 const geolocate = new maplibregl.GeolocateControl({
@@ -739,6 +764,9 @@ const geolocate = new maplibregl.GeolocateControl({
 });
 plowMap.addControl(geolocate, "bottom-right");
 geolocate.on("geolocate", () => gtag("event", "geolocate"));
+
+// Persist map view to localStorage on every move
+plowMap.on("moveend", saveMapView);
 
 /* ── Analytics: debounced viewport tracking ────────── */
 
@@ -1030,6 +1058,9 @@ class PlowApp {
     this.sources = {};
     this.enabledSources = new Set();
 
+    // Last fetched vehicle data (for source fitBounds)
+    this.vehicleData = null;
+
     // Realtime
     this.refreshInterval = null;
     this.activeVehicleId = null;
@@ -1083,9 +1114,19 @@ class PlowApp {
 
     for (const key of sourceKeys) {
       const src = this.sources[key];
+
+      const row = document.createElement("div");
+      row.className = "legend-source-row";
+      row.dataset.source = key;
+
+      const zoomBtn = document.createElement("button");
+      zoomBtn.className = "legend-zoom-btn";
+      zoomBtn.title = `Zoom to ${src.display_name}`;
+      zoomBtn.textContent = "\u2316"; // ⌖ position indicator
+      zoomBtn.dataset.source = key;
+
       const label = document.createElement("label");
       label.className = "legend-row";
-      label.dataset.source = key;
 
       const cb = document.createElement("input");
       cb.type = "checkbox";
@@ -1095,7 +1136,10 @@ class PlowApp {
       const text = document.createTextNode(src.display_name);
       label.appendChild(text);
       label.appendChild(cb);
-      container.appendChild(label);
+
+      row.appendChild(zoomBtn);
+      row.appendChild(label);
+      container.appendChild(row);
     }
 
     // Also add a "Types" section title to the vehicle legend (idempotent)
@@ -1573,6 +1617,7 @@ class PlowApp {
       try {
         const rawData = await fetchVehicles();
         const freshData = filterRecentFeatures(rawData);
+        this.vehicleData = freshData;
         this.map.updateVehicles(freshData);
         this.map.updateMiniTrails(buildMiniTrails(freshData));
         updateVehicleCount(freshData);
@@ -1705,7 +1750,7 @@ timeSliderEl.noUiSlider.on("update", () => {
 
 // Legend source checkboxes
 document.getElementById("legend-sources").addEventListener("change", (e) => {
-  const row = e.target.closest(".legend-row");
+  const row = e.target.closest(".legend-source-row");
   if (!row) return;
   const sourceKey = row.dataset.source;
   if (e.target.checked) {
@@ -1715,6 +1760,31 @@ document.getElementById("legend-sources").addEventListener("change", (e) => {
   }
   app.applyFilters();
   app.populateFollowDropdown();
+});
+
+// Legend source zoom buttons
+document.getElementById("legend-sources").addEventListener("click", (e) => {
+  const btn = e.target.closest(".legend-zoom-btn");
+  if (!btn) return;
+  const sourceKey = btn.dataset.source;
+
+  // Fit to the source's vehicle positions, fall back to default view
+  if (app.vehicleData) {
+    const features = app.vehicleData.features.filter(
+      (f) => f.properties && f.properties.source === sourceKey
+    );
+    if (features.length > 0) {
+      const bounds = new maplibregl.LngLatBounds();
+      for (const f of features) bounds.extend(f.geometry.coordinates);
+      plowMap.map.fitBounds(bounds, { padding: 50, maxZoom: 13 });
+      return;
+    }
+  }
+  // No vehicles — fly to source's default center/zoom
+  if (app.sources[sourceKey]) {
+    const src = app.sources[sourceKey];
+    plowMap.map.flyTo({ center: src.center, zoom: src.zoom });
+  }
 });
 
 // Legend type checkboxes
@@ -1742,19 +1812,11 @@ plowMap.on("load", async () => {
 
   const rawData = await fetchVehicles();
   const data = filterRecentFeatures(rawData);
+  app.vehicleData = data;
   updateVehicleCount(data);
 
   plowMap.initVehicles(data);
   plowMap.initMiniTrails(buildMiniTrails(data));
-
-  // Fit map bounds to all visible vehicles
-  if (data.features.length > 0) {
-    const bounds = new maplibregl.LngLatBounds();
-    for (const f of data.features) {
-      bounds.extend(f.geometry.coordinates);
-    }
-    plowMap.map.fitBounds(bounds, { padding: 50, maxZoom: 13, duration: 0 });
-  }
 
   plowMap.on("mouseenter", "vehicle-circles", () => {
     plowMap.getCanvas().style.cursor = "pointer";

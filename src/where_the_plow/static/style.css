@@ -431,14 +431,44 @@ body {
     margin-bottom: 6px;
 }
 
+.legend-source-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 4px;
+}
+
+.legend-zoom-btn {
+    background: none;
+    border: 1px solid var(--color-text-muted);
+    border-radius: 3px;
+    color: var(--color-text-secondary);
+    font-size: 0.72rem;
+    line-height: 1;
+    padding: 2px 3px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.legend-zoom-btn:hover {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
+}
+
 .legend-row {
     display: flex;
     align-items: center;
     gap: 7px;
     font-size: 0.78rem;
     color: var(--color-text);
-    margin-bottom: 4px;
     cursor: pointer;
+    flex: 1;
+}
+
+/* Vehicle type rows use .legend-row directly (no wrapper) */
+#legend-vehicles .legend-row {
+    margin-bottom: 4px;
 }
 
 .legend-check {
