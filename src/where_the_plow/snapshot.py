@@ -6,9 +6,9 @@ from datetime import datetime
 from where_the_plow.db import Database
 
 
-def build_realtime_snapshot(db: Database) -> dict:
+def build_realtime_snapshot(db: Database, source: str | None = None) -> dict:
     """Query latest positions with mini-trails and return a GeoJSON FeatureCollection dict."""
-    rows = db.get_latest_positions_with_trails(trail_points=6)
+    rows = db.get_latest_positions_with_trails(trail_points=6, source=source)
     features = []
     for r in rows:
         ts = r["timestamp"]
@@ -29,6 +29,7 @@ def build_realtime_snapshot(db: Database) -> dict:
                     "is_driving": r["is_driving"],
                     "timestamp": ts_str,
                     "trail": r["trail"],
+                    "source": r.get("source", "st_johns"),
                 },
             }
         )
