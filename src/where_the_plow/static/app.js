@@ -863,6 +863,28 @@ function formatTimestamp(ts) {
   });
 }
 
+/** Get padded viewport bounds for coverage culling. */
+function getPaddedBounds(map, padding) {
+  const b = map.getBounds();
+  const padLng = (b.getEast() - b.getWest()) * padding;
+  const padLat = (b.getNorth() - b.getSouth()) * padding;
+  return {
+    west: b.getWest() - padLng,
+    south: b.getSouth() - padLat,
+    east: b.getEast() + padLng,
+    north: b.getNorth() + padLat,
+  };
+}
+
+function inBounds(coord, b) {
+  return (
+    coord[0] >= b.west &&
+    coord[0] <= b.east &&
+    coord[1] >= b.south &&
+    coord[1] <= b.north
+  );
+}
+
 function formatBytes(bytes) {
   if (bytes === null || bytes === undefined) return "";
   if (bytes < 1024) return bytes + " B";
@@ -1570,6 +1592,7 @@ class PlowApp {
     const fromMs = fromTime.getTime();
     const toMs = toTime.getTime();
     const rangeMs = toMs - fromMs;
+    const bounds = getPaddedBounds(plowMap.map, 0.2);
 
     const segmentFeatures = [];
     for (const feature of this.coverageData.features) {
@@ -1582,6 +1605,10 @@ class PlowApp {
         const tNextMs = epochMs[i + 1];
         if (tMs < fromMs) continue;
         if (tNextMs > toMs) break;
+
+        // Viewport culling: skip if both endpoints are off-screen
+        if (!inBounds(coords[i], bounds) && !inBounds(coords[i + 1], bounds))
+          continue;
 
         const progress = rangeMs > 0 ? (tMs - fromMs) / rangeMs : 1;
         const opacity = 0.15 + progress * 0.65;
@@ -1610,6 +1637,7 @@ class PlowApp {
     if (!this.coverageData) return;
     const fromMs = fromTime.getTime();
     const toMs = toTime.getTime();
+    const bounds = getPaddedBounds(plowMap.map, 0.2);
 
     const pointFeatures = [];
     for (const feature of this.coverageData.features) {
@@ -1619,6 +1647,7 @@ class PlowApp {
         const tMs = epochMs[i];
         if (tMs < fromMs) continue;
         if (tMs > toMs) break;
+        if (!inBounds(coords[i], bounds)) continue;
         pointFeatures.push({
           type: "Feature",
           geometry: { type: "Point", coordinates: coords[i] },
@@ -1844,6 +1873,19 @@ playbackFollowSelect.addEventListener("change", () => {
 document
   .getElementById("detail-close")
   .addEventListener("click", () => app.closeDetail());
+
+/* ── Coverage: re-render on pan/zoom ───────────────── */
+
+let coverageMoveTimeout = null;
+plowMap.map.on("moveend", () => {
+  if (app.mode !== "coverage" || !app.coverageData) return;
+  if (app.playback.playing) return; // playback handles its own rendering
+  clearTimeout(coverageMoveTimeout);
+  coverageMoveTimeout = setTimeout(() => {
+    const vals = timeSliderEl.noUiSlider.get().map(Number);
+    app.renderCoverage(vals[0], vals[1]);
+  }, 150);
+});
 
 /* ── Map load: sources, layers, handlers ───────────── */
 
