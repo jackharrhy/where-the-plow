@@ -214,6 +214,7 @@ def test_get_sources(test_client):
     assert len(src["center"]) == 2
     assert isinstance(src["zoom"], int)
     assert src["enabled"] is True
+    assert isinstance(src["min_coverage_zoom"], int)
 
 
 def test_get_vehicles_with_source_filter(test_client):
