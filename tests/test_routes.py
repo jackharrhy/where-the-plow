@@ -202,6 +202,146 @@ def test_track_viewport_invalid(test_client):
     assert resp.status_code == 422
 
 
+def test_get_sources(test_client):
+    resp = test_client.get("/sources")
+    assert resp.status_code == 200
+    data = resp.json()
+    # All three sources are enabled by default
+    assert "st_johns" in data
+    src = data["st_johns"]
+    assert src["display_name"] == "St. John's"
+    assert isinstance(src["center"], list)
+    assert len(src["center"]) == 2
+    assert isinstance(src["zoom"], int)
+    assert src["enabled"] is True
+
+
+def test_get_vehicles_with_source_filter(test_client):
+    # Seeded data uses default source "st_johns"
+    resp = test_client.get("/vehicles?source=st_johns")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["type"] == "FeatureCollection"
+    assert len(data["features"]) == 2
+    for f in data["features"]:
+        assert f["properties"]["source"] == "st_johns"
+
+    # Filtering by a source with no data returns empty
+    resp = test_client.get("/vehicles?source=mt_pearl")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["features"]) == 0
+
+
+def _make_snapshot_feature(vehicle_id, source, lng=-52.73, lat=47.56):
+    """Build a minimal GeoJSON Feature dict for cache tests."""
+    return {
+        "type": "Feature",
+        "geometry": {"type": "Point", "coordinates": [lng, lat]},
+        "properties": {
+            "vehicle_id": vehicle_id,
+            "description": f"{vehicle_id} PLOW",
+            "vehicle_type": "PLOW",
+            "speed": 10.0,
+            "bearing": 90,
+            "is_driving": "maybe",
+            "timestamp": "2026-02-19T12:00:00+00:00",
+            "trail": None,
+            "source": source,
+        },
+    }
+
+
+def test_get_vehicles_realtime_cache_merge(test_client):
+    """No source filter: merge returns the union of all source features."""
+    app = test_client.app
+    app.state.store["realtime"] = {
+        "st_johns": {
+            "type": "FeatureCollection",
+            "features": [_make_snapshot_feature("v1", "st_johns")],
+        },
+        "mt_pearl": {
+            "type": "FeatureCollection",
+            "features": [
+                _make_snapshot_feature("mp1", "mt_pearl", lng=-52.81, lat=47.52),
+                _make_snapshot_feature("mp2", "mt_pearl", lng=-52.82, lat=47.53),
+            ],
+        },
+    }
+    try:
+        resp = test_client.get("/vehicles")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "FeatureCollection"
+        assert len(data["features"]) == 3
+        ids = {f["properties"]["vehicle_id"] for f in data["features"]}
+        assert ids == {"v1", "mp1", "mp2"}
+    finally:
+        del app.state.store["realtime"]
+
+
+def test_get_vehicles_realtime_cache_single_source(test_client):
+    """Source filter returns only that source's cached features."""
+    app = test_client.app
+    app.state.store["realtime"] = {
+        "st_johns": {
+            "type": "FeatureCollection",
+            "features": [_make_snapshot_feature("v1", "st_johns")],
+        },
+        "mt_pearl": {
+            "type": "FeatureCollection",
+            "features": [_make_snapshot_feature("mp1", "mt_pearl")],
+        },
+    }
+    try:
+        resp = test_client.get("/vehicles?source=mt_pearl")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["features"]) == 1
+        assert data["features"][0]["properties"]["vehicle_id"] == "mp1"
+        assert data["features"][0]["properties"]["source"] == "mt_pearl"
+    finally:
+        del app.state.store["realtime"]
+
+
+def test_get_vehicles_realtime_cache_unknown_source_falls_through(test_client):
+    """Source not in cache falls through to DB query, returning empty."""
+    app = test_client.app
+    app.state.store["realtime"] = {
+        "st_johns": {
+            "type": "FeatureCollection",
+            "features": [_make_snapshot_feature("v1", "st_johns")],
+        },
+    }
+    try:
+        resp = test_client.get("/vehicles?source=provincial")
+        assert resp.status_code == 200
+        data = resp.json()
+        # "provincial" not in cache, falls through to DB; no DB data for provincial
+        assert len(data["features"]) == 0
+    finally:
+        del app.state.store["realtime"]
+
+
+def test_get_coverage_with_source_filter(test_client):
+    resp = test_client.get(
+        "/coverage?source=st_johns&since=2026-02-19T00:00:00Z&until=2026-02-20T00:00:00Z"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["type"] == "FeatureCollection"
+    assert len(data["features"]) == 1
+    assert data["features"][0]["properties"]["source"] == "st_johns"
+
+    # No data for mt_pearl
+    resp = test_client.get(
+        "/coverage?source=mt_pearl&since=2026-02-19T00:00:00Z&until=2026-02-20T00:00:00Z"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["features"]) == 0
+
+
 def test_openapi_spec(test_client):
     resp = test_client.get("/openapi.json")
     assert resp.status_code == 200
@@ -212,3 +352,4 @@ def test_openapi_spec(test_client):
     assert "/coverage" in paths
     assert "/stats" in paths
     assert "/track" in paths
+    assert "/sources" in paths
