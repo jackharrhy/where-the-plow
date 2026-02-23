@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 import httpx
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # The AVL API returns epoch-millisecond timestamps that represent
 # Newfoundland Standard Time (UTC-3:30) but are encoded as if they were UTC.
@@ -8,62 +9,133 @@ import httpx
 _NST_CORRECTION = timedelta(hours=3, minutes=30)
 
 
+# ── AVL (St. John's) response models ────────────────────────────────
+
+
+class AvlGeometry(BaseModel):
+    x: float = 0.0
+    y: float = 0.0
+
+
+class AvlAttributes(BaseModel):
+    ID: str
+    Description: str = ""
+    VehicleType: str = ""
+    LocationDateTime: int
+    Bearing: int = 0
+    Speed: float = 0.0
+    isDriving: str = ""
+
+    @field_validator("Speed", mode="before")
+    @classmethod
+    def coerce_speed(cls, v):
+        """Speed arrives as a string from the API."""
+        try:
+            return float(v)
+        except (ValueError, TypeError):
+            return 0.0
+
+
+class AvlFeature(BaseModel):
+    attributes: AvlAttributes
+    geometry: AvlGeometry = AvlGeometry()
+
+
+class AvlResponse(BaseModel):
+    features: list[AvlFeature] = []
+
+
+# ── AATracking (Mt Pearl / Provincial) response models ───────────────
+
+# Map LOO_TYPE to normalized vehicle types matching St. John's AVL.
+_AATRACKING_TYPE_MAP = {
+    "HEAVY_TYPE": "LOADER",
+    "TRUCK_TYPE": "SA PLOW TRUCK",
+}
+
+
+class AATrackingItem(BaseModel):
+    VEH_ID: int
+    VEH_NAME: str = ""
+    VEH_EVENT_DATETIME: datetime | None = None
+    VEH_EVENT_LATITUDE: float = 0.0
+    VEH_EVENT_LONGITUDE: float = 0.0
+    VEH_EVENT_HEADING: float | None = 0.0
+    LOO_TYPE: str = ""
+    LOO_DESCRIPTION: str = ""
+
+    @field_validator("VEH_EVENT_DATETIME", mode="before")
+    @classmethod
+    def parse_datetime(cls, v):
+        """Handle missing, null, or malformed datetime strings."""
+        if v is None or v == "":
+            return None
+        if isinstance(v, str):
+            try:
+                dt = datetime.fromisoformat(v.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt
+            except ValueError:
+                return None
+        return v
+
+    @property
+    def vehicle_type(self) -> str:
+        return _AATRACKING_TYPE_MAP.get(self.LOO_TYPE, self.LOO_TYPE or "Unknown")
+
+    @property
+    def description(self) -> str:
+        if self.LOO_DESCRIPTION:
+            return f"{self.VEH_NAME} ({self.LOO_DESCRIPTION})"
+        return self.VEH_NAME
+
+    @property
+    def bearing(self) -> int:
+        try:
+            return int(self.VEH_EVENT_HEADING)
+        except (ValueError, TypeError):
+            return 0
+
+
+# ── Parsers ──────────────────────────────────────────────────────────
+
+
 def parse_avl_response(data: dict) -> tuple[list[dict], list[dict]]:
+    response = AvlResponse.model_validate(data)
+
     vehicles = []
     positions = []
-    for feature in data.get("features", []):
-        attrs = feature["attributes"]
-        geom = feature.get("geometry", {})
+    for feature in response.features:
+        attrs = feature.attributes
+        geom = feature.geometry
 
-        vehicle_id = str(attrs["ID"])
         naive_ts = datetime.fromtimestamp(
-            attrs["LocationDateTime"] / 1000, tz=timezone.utc
+            attrs.LocationDateTime / 1000, tz=timezone.utc
         )
         ts = naive_ts + _NST_CORRECTION
 
         vehicles.append(
             {
-                "vehicle_id": vehicle_id,
-                "description": attrs.get("Description", ""),
-                "vehicle_type": attrs.get("VehicleType", ""),
+                "vehicle_id": attrs.ID,
+                "description": attrs.Description,
+                "vehicle_type": attrs.VehicleType,
             }
         )
 
-        speed_raw = attrs.get("Speed", "0.0")
-        try:
-            speed = float(speed_raw)
-        except (ValueError, TypeError):
-            speed = 0.0
-
         positions.append(
             {
-                "vehicle_id": vehicle_id,
+                "vehicle_id": attrs.ID,
                 "timestamp": ts,
-                "longitude": geom.get("x", 0.0),
-                "latitude": geom.get("y", 0.0),
-                "bearing": attrs.get("Bearing", 0),
-                "speed": speed,
-                "is_driving": attrs.get("isDriving", ""),
+                "longitude": geom.x,
+                "latitude": geom.y,
+                "bearing": attrs.Bearing,
+                "speed": attrs.Speed,
+                "is_driving": attrs.isDriving,
             }
         )
 
     return vehicles, positions
-
-
-def _safe_bearing(value) -> int:
-    """Convert bearing to int, handling None/invalid values."""
-    try:
-        return int(float(value))
-    except (ValueError, TypeError):
-        return 0
-
-
-# Map AATracking LOO_TYPE to normalized vehicle types matching St. John's AVL.
-# This keeps legend colors consistent across all sources.
-_AATRACKING_TYPE_MAP = {
-    "HEAVY_TYPE": "LOADER",
-    "TRUCK_TYPE": "SA PLOW TRUCK",
-}
 
 
 def parse_aatracking_response(
@@ -71,51 +143,34 @@ def parse_aatracking_response(
 ) -> tuple[list[dict], list[dict]]:
     """Parse AATracking portal response (Mt Pearl, Provincial).
 
-    If VEH_EVENT_DATETIME is present, use it. Otherwise fall back to collected_at.
+    Items that fail validation (missing VEH_ID, bad types) are silently
+    skipped — a single bad record shouldn't break the entire poll.
     """
     vehicles = []
     positions = []
-    for item in data:
-        raw_id = item.get("VEH_ID")
-        if raw_id is None:
+    for raw_item in data:
+        try:
+            item = AATrackingItem.model_validate(raw_item)
+        except Exception:
             continue
-        vehicle_id = str(raw_id)
 
-        # Parse timestamp: present for Mt Pearl, absent for Provincial
-        ts_str = item.get("VEH_EVENT_DATETIME")
-        if ts_str:
-            try:
-                ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-                if ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=timezone.utc)
-            except (ValueError, TypeError):
-                ts = collected_at or datetime.now(timezone.utc)
-        else:
-            ts = collected_at or datetime.now(timezone.utc)
-
-        # Normalize vehicle type from LOO_TYPE to match St. John's categories.
-        # LOO_DESCRIPTION (e.g. "Large Loader") goes into the description for detail popups.
-        loo_type = item.get("LOO_TYPE", "")
-        vehicle_type = _AATRACKING_TYPE_MAP.get(loo_type, loo_type or "Unknown")
-        veh_name = item.get("VEH_NAME", "")
-        loo_desc = item.get("LOO_DESCRIPTION", "")
-        description = f"{veh_name} ({loo_desc})" if loo_desc else veh_name
+        ts = item.VEH_EVENT_DATETIME or collected_at or datetime.now(timezone.utc)
 
         vehicles.append(
             {
-                "vehicle_id": vehicle_id,
-                "description": description,
-                "vehicle_type": vehicle_type,
+                "vehicle_id": str(item.VEH_ID),
+                "description": item.description,
+                "vehicle_type": item.vehicle_type,
             }
         )
 
         positions.append(
             {
-                "vehicle_id": vehicle_id,
+                "vehicle_id": str(item.VEH_ID),
                 "timestamp": ts,
-                "longitude": item.get("VEH_EVENT_LONGITUDE", 0.0),
-                "latitude": item.get("VEH_EVENT_LATITUDE", 0.0),
-                "bearing": _safe_bearing(item.get("VEH_EVENT_HEADING", 0)),
+                "longitude": item.VEH_EVENT_LONGITUDE,
+                "latitude": item.VEH_EVENT_LATITUDE,
+                "bearing": item.bearing,
                 "speed": None,
                 "is_driving": None,
             }
