@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from where_the_plow.client import parse_avl_response
+from where_the_plow.client import parse_aatracking_response, parse_avl_response
 
 
 SAMPLE_RESPONSE = {
@@ -81,3 +81,70 @@ def test_parse_speed_conversion():
     }
     _, positions = parse_avl_response(resp)
     assert positions[0]["speed"] == 25.7
+
+
+SAMPLE_MT_PEARL_RESPONSE = [
+    {
+        "VEH_ID": 17186,
+        "VEH_NAME": "21-21D",
+        "VEH_UNIQUE_ID": "358013097968953",
+        "VEH_EVENT_DATETIME": "2026-02-23T02:47:04",
+        "VEH_EVENT_LATITUDE": 47.520455,
+        "VEH_EVENT_LONGITUDE": -52.8394317,
+        "VEH_EVENT_HEADING": 144.2,
+        "LOO_TYPE": "HEAVY_TYPE",
+        "LOO_CODE": "SnowPlowBlue_",
+        "VEH_SEG_TYPE": "ST",
+        "LOO_DESCRIPTION": "Large Snow Plow_Blue",
+    }
+]
+
+SAMPLE_PROVINCIAL_RESPONSE = [
+    {
+        "VEH_ID": 15644,
+        "VEH_NAME": "7452 F",
+        "VEH_EVENT_LATITUDE": 48.986115,
+        "VEH_EVENT_LONGITUDE": -55.55174,
+        "VEH_EVENT_HEADING": 46.03,
+        "LOO_TYPE": "TRUCK_TYPE",
+        "LOO_CODE": "ng-Plow-Full-FS-Yellow_",
+        "LOO_DESCRIPTION": "Large Plow Full Plow Side Yellow",
+    }
+]
+
+
+def test_parse_aatracking_with_timestamp():
+    """Mt Pearl response includes VEH_EVENT_DATETIME."""
+    vehicles, positions = parse_aatracking_response(SAMPLE_MT_PEARL_RESPONSE)
+    assert len(vehicles) == 1
+    assert len(positions) == 1
+
+    assert vehicles[0]["vehicle_id"] == "17186"
+    assert vehicles[0]["description"] == "21-21D"
+    assert vehicles[0]["vehicle_type"] == "Large Snow Plow_Blue"
+
+    assert positions[0]["vehicle_id"] == "17186"
+    assert positions[0]["latitude"] == 47.520455
+    assert positions[0]["longitude"] == -52.8394317
+    assert positions[0]["bearing"] == 144
+    assert positions[0]["speed"] is None
+    assert positions[0]["is_driving"] is None
+    assert positions[0]["timestamp"].year == 2026
+
+
+def test_parse_aatracking_without_timestamp():
+    """Provincial response has no VEH_EVENT_DATETIME — uses collected_at fallback."""
+    collected_at = datetime(2026, 2, 23, 3, 0, 0, tzinfo=timezone.utc)
+    vehicles, positions = parse_aatracking_response(
+        SAMPLE_PROVINCIAL_RESPONSE, collected_at=collected_at
+    )
+    assert len(vehicles) == 1
+    assert positions[0]["timestamp"] == collected_at
+    assert positions[0]["latitude"] == 48.986115
+    assert positions[0]["speed"] is None
+
+
+def test_parse_aatracking_empty():
+    vehicles, positions = parse_aatracking_response([])
+    assert vehicles == []
+    assert positions == []
