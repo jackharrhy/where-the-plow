@@ -1,6 +1,8 @@
 import os
 import tempfile
 
+import pytest
+
 from where_the_plow.db import Database
 from where_the_plow.collector import process_poll
 
@@ -30,6 +32,7 @@ SAMPLE_AATRACKING_RESPONSE = [
         "VEH_EVENT_LATITUDE": 47.52,
         "VEH_EVENT_LONGITUDE": -52.84,
         "VEH_EVENT_HEADING": 144,
+        "LOO_TYPE": "HEAVY_TYPE",
         "LOO_DESCRIPTION": "Large Snow Plow_Blue",
     }
 ]
@@ -78,5 +81,13 @@ def test_process_poll_deduplicates():
     assert inserted2 == 0
     total = db.conn.execute("SELECT count(*) FROM positions").fetchone()[0]
     assert total == 1
+    db.close()
+    os.unlink(path)
+
+
+def test_process_poll_unknown_parser():
+    db, path = make_db()
+    with pytest.raises(ValueError, match="Unknown parser"):
+        process_poll(db, {}, source="test", parser="nonexistent")
     db.close()
     os.unlink(path)

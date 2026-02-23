@@ -150,3 +150,47 @@ def test_parse_aatracking_empty():
     vehicles, positions = parse_aatracking_response([])
     assert vehicles == []
     assert positions == []
+
+
+def test_parse_aatracking_null_bearing():
+    """VEH_EVENT_HEADING could be null or missing — should default to 0."""
+    data = [
+        {
+            "VEH_ID": 999,
+            "VEH_NAME": "test",
+            "VEH_EVENT_LATITUDE": 47.5,
+            "VEH_EVENT_LONGITUDE": -52.8,
+            "VEH_EVENT_HEADING": None,
+            "LOO_TYPE": "HEAVY_TYPE",
+            "LOO_DESCRIPTION": "Large Loader",
+        }
+    ]
+    _, positions = parse_aatracking_response(data)
+    assert positions[0]["bearing"] == 0
+
+
+def test_parse_aatracking_missing_veh_id():
+    """Items without VEH_ID should be skipped, not crash."""
+    data = [
+        {
+            "VEH_NAME": "ghost",
+            "VEH_EVENT_LATITUDE": 47.5,
+            "VEH_EVENT_LONGITUDE": -52.8,
+            "VEH_EVENT_HEADING": 90,
+            "LOO_TYPE": "TRUCK_TYPE",
+            "LOO_DESCRIPTION": "Large Plow",
+        },
+        {
+            "VEH_ID": 100,
+            "VEH_NAME": "real",
+            "VEH_EVENT_LATITUDE": 47.6,
+            "VEH_EVENT_LONGITUDE": -52.7,
+            "VEH_EVENT_HEADING": 180,
+            "LOO_TYPE": "HEAVY_TYPE",
+            "LOO_DESCRIPTION": "Large Loader",
+        },
+    ]
+    vehicles, positions = parse_aatracking_response(data)
+    assert len(vehicles) == 1
+    assert vehicles[0]["vehicle_id"] == "100"
+    assert len(positions) == 1

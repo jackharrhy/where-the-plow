@@ -70,6 +70,14 @@ async def fetch_vehicles(client: httpx.AsyncClient) -> dict:
     return resp.json()
 
 
+def _safe_bearing(value) -> int:
+    """Convert bearing to int, handling None/invalid values."""
+    try:
+        return int(float(value))
+    except (ValueError, TypeError):
+        return 0
+
+
 # Map AATracking LOO_TYPE to normalized vehicle types matching St. John's AVL.
 # This keeps legend colors consistent across all sources.
 _AATRACKING_TYPE_MAP = {
@@ -88,7 +96,10 @@ def parse_aatracking_response(
     vehicles = []
     positions = []
     for item in data:
-        vehicle_id = str(item["VEH_ID"])
+        raw_id = item.get("VEH_ID")
+        if raw_id is None:
+            continue
+        vehicle_id = str(raw_id)
 
         # Parse timestamp: present for Mt Pearl, absent for Provincial
         ts_str = item.get("VEH_EVENT_DATETIME")
@@ -124,7 +135,7 @@ def parse_aatracking_response(
                 "timestamp": ts,
                 "longitude": item.get("VEH_EVENT_LONGITUDE", 0.0),
                 "latitude": item.get("VEH_EVENT_LATITUDE", 0.0),
-                "bearing": int(item.get("VEH_EVENT_HEADING", 0)),
+                "bearing": _safe_bearing(item.get("VEH_EVENT_HEADING", 0)),
                 "speed": None,
                 "is_driving": None,
             }
