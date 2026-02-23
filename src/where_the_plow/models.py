@@ -30,6 +30,11 @@ class FeatureProperties(BaseModel):
     trail: list[list[float]] | None = Field(
         None, description="Recent trail coordinates [[lng, lat], ...]"
     )
+    source: str = Field(
+        "st_johns",
+        description="Data source identifier",
+        json_schema_extra={"example": "st_johns"},
+    )
 
 
 class Feature(BaseModel):
@@ -69,6 +74,11 @@ class CoverageProperties(BaseModel):
     timestamps: list[str] = Field(
         ...,
         description="ISO 8601 timestamps parallel to coordinates array",
+    )
+    source: str = Field(
+        "st_johns",
+        description="Data source identifier",
+        json_schema_extra={"example": "st_johns"},
     )
 
 
