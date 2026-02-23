@@ -291,3 +291,60 @@ def test_run_migrations_missing_upgrade_function(tmp_path):
         run_migrations(conn, mig_dir)
 
     conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Migration 001 tests
+# ---------------------------------------------------------------------------
+
+
+def test_001_fresh_db_creates_tables(tmp_path):
+    """Migration 001 creates the full baseline schema on a fresh DB."""
+    conn = duckdb.connect(str(tmp_path / "fresh.db"))
+    conn.execute("INSTALL spatial; LOAD spatial")
+
+    migrations_dir = (
+        Path(__file__).parent.parent / "src" / "where_the_plow" / "migrations"
+    )
+    run_migrations(conn, migrations_dir)
+
+    tables = {
+        r[0]
+        for r in conn.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema='main'"
+        ).fetchall()
+    }
+    assert "vehicles" in tables
+    assert "positions" in tables
+    assert "viewports" in tables
+    assert "signups" in tables
+
+    # Check key columns exist (including legacy migration columns)
+    pos_cols = {
+        r[0]
+        for r in conn.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='positions'"
+        ).fetchall()
+    }
+    assert "geom" in pos_cols
+    assert "vehicle_id" in pos_cols
+
+    vp_cols = {
+        r[0]
+        for r in conn.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='viewports'"
+        ).fetchall()
+    }
+    assert "ip" in vp_cols
+    assert "user_agent" in vp_cols
+
+    su_cols = {
+        r[0]
+        for r in conn.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='signups'"
+        ).fetchall()
+    }
+    assert "ip" in su_cols
+    assert "user_agent" in su_cols
+
+    conn.close()
