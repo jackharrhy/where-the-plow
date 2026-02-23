@@ -1,4 +1,5 @@
 # tests/test_migrate.py
+import shutil
 import textwrap
 from pathlib import Path
 
@@ -346,5 +347,72 @@ def test_001_fresh_db_creates_tables(tmp_path):
     }
     assert "ip" in su_cols
     assert "user_agent" in su_cols
+
+    conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Migration 002 tests
+# ---------------------------------------------------------------------------
+
+
+def test_002_migrates_prod_db(tmp_path):
+    """Migration 002 adds source columns to a real production DB copy."""
+    prod_src = Path(__file__).parent.parent / "data" / "og-prod-plow.db"
+    if not prod_src.exists():
+        pytest.skip("og-prod-plow.db not available")
+
+    test_db = tmp_path / "prod-copy.db"
+    shutil.copy2(prod_src, test_db)
+
+    conn = duckdb.connect(str(test_db))
+    conn.execute("LOAD spatial")
+
+    migrations_dir = (
+        Path(__file__).parent.parent / "src" / "where_the_plow" / "migrations"
+    )
+    run_migrations(conn, migrations_dir)
+
+    assert get_version(conn) == 2
+
+    # Vehicles should have source column with composite PK
+    veh_cols = {
+        r[0]
+        for r in conn.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='vehicles'"
+        ).fetchall()
+    }
+    assert "source" in veh_cols
+
+    veh_pks = conn.execute(
+        "SELECT constraint_column_names FROM duckdb_constraints() "
+        "WHERE table_name='vehicles' AND constraint_type='PRIMARY KEY'"
+    ).fetchone()
+    assert set(veh_pks[0]) == {"vehicle_id", "source"}
+
+    # Positions should have source column with composite PK
+    pos_cols = {
+        r[0]
+        for r in conn.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='positions'"
+        ).fetchall()
+    }
+    assert "source" in pos_cols
+
+    pos_pks = conn.execute(
+        "SELECT constraint_column_names FROM duckdb_constraints() "
+        "WHERE table_name='positions' AND constraint_type='PRIMARY KEY'"
+    ).fetchone()
+    assert set(pos_pks[0]) == {"vehicle_id", "timestamp", "source"}
+
+    # All existing rows should have source='st_johns'
+    non_stj = conn.execute(
+        "SELECT count(*) FROM vehicles WHERE source != 'st_johns'"
+    ).fetchone()[0]
+    assert non_stj == 0
+
+    # Row count should be preserved
+    count = conn.execute("SELECT count(*) FROM positions").fetchone()[0]
+    assert count > 0  # og-prod-plow.db has ~917k rows
 
     conn.close()
