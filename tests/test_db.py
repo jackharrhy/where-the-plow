@@ -867,6 +867,175 @@ def test_get_latest_positions_with_trails_gap_filtering():
     os.unlink(path)
 
 
+def test_source_column_exists():
+    db, path = make_db()
+    cols = db.conn.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_name='positions'"
+    ).fetchall()
+    col_names = {c[0] for c in cols}
+    assert "source" in col_names
+
+    cols = db.conn.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_name='vehicles'"
+    ).fetchall()
+    col_names = {c[0] for c in cols}
+    assert "source" in col_names
+    db.close()
+    os.unlink(path)
+
+
+def test_upsert_vehicles_with_source():
+    db, path = make_db()
+    now = datetime(2026, 2, 19, 12, 0, 0, tzinfo=timezone.utc)
+    db.upsert_vehicles(
+        [{"vehicle_id": "v1", "description": "Plow 1", "vehicle_type": "LOADER"}],
+        now,
+        source="mt_pearl",
+    )
+    row = db.conn.execute(
+        "SELECT source FROM vehicles WHERE vehicle_id='v1'"
+    ).fetchone()
+    assert row[0] == "mt_pearl"
+    db.close()
+    os.unlink(path)
+
+
+def test_insert_positions_with_source():
+    db, path = make_db()
+    now = datetime(2026, 2, 19, 12, 0, 0, tzinfo=timezone.utc)
+    ts = datetime(2026, 2, 19, 12, 0, 0, tzinfo=timezone.utc)
+    positions = [
+        {
+            "vehicle_id": "v1",
+            "timestamp": ts,
+            "longitude": -52.73,
+            "latitude": 47.56,
+            "bearing": 135,
+            "speed": None,
+            "is_driving": None,
+        },
+    ]
+    inserted = db.insert_positions(positions, now, source="mt_pearl")
+    assert inserted == 1
+    row = db.conn.execute(
+        "SELECT source FROM positions WHERE vehicle_id='v1'"
+    ).fetchone()
+    assert row[0] == "mt_pearl"
+    db.close()
+    os.unlink(path)
+
+
+def test_same_vehicle_id_different_sources():
+    db, path = make_db()
+    now = datetime(2026, 2, 19, 12, 0, 0, tzinfo=timezone.utc)
+    ts = datetime(2026, 2, 19, 12, 0, 0, tzinfo=timezone.utc)
+
+    db.upsert_vehicles(
+        [{"vehicle_id": "123", "description": "SJ Plow", "vehicle_type": "LOADER"}],
+        now,
+        source="st_johns",
+    )
+    db.upsert_vehicles(
+        [{"vehicle_id": "123", "description": "MP Plow", "vehicle_type": "LOADER"}],
+        now,
+        source="mt_pearl",
+    )
+    count = db.conn.execute("SELECT count(*) FROM vehicles").fetchone()[0]
+    assert count == 2
+
+    db.insert_positions(
+        [
+            {
+                "vehicle_id": "123",
+                "timestamp": ts,
+                "longitude": -52.73,
+                "latitude": 47.56,
+                "bearing": 0,
+                "speed": 0.0,
+                "is_driving": "maybe",
+            }
+        ],
+        now,
+        source="st_johns",
+    )
+    db.insert_positions(
+        [
+            {
+                "vehicle_id": "123",
+                "timestamp": ts,
+                "longitude": -52.81,
+                "latitude": 47.52,
+                "bearing": 0,
+                "speed": None,
+                "is_driving": None,
+            }
+        ],
+        now,
+        source="mt_pearl",
+    )
+    count = db.conn.execute("SELECT count(*) FROM positions").fetchone()[0]
+    assert count == 2
+    db.close()
+    os.unlink(path)
+
+
+def test_get_latest_positions_with_source_filter():
+    db, path = make_db()
+    now = datetime(2026, 2, 19, 12, 0, 0, tzinfo=timezone.utc)
+    ts = datetime(2026, 2, 19, 12, 0, 0, tzinfo=timezone.utc)
+
+    db.upsert_vehicles(
+        [{"vehicle_id": "v1", "description": "SJ", "vehicle_type": "LOADER"}],
+        now,
+        source="st_johns",
+    )
+    db.upsert_vehicles(
+        [{"vehicle_id": "v2", "description": "MP", "vehicle_type": "LOADER"}],
+        now,
+        source="mt_pearl",
+    )
+    db.insert_positions(
+        [
+            {
+                "vehicle_id": "v1",
+                "timestamp": ts,
+                "longitude": -52.73,
+                "latitude": 47.56,
+                "bearing": 0,
+                "speed": 10.0,
+                "is_driving": "maybe",
+            }
+        ],
+        now,
+        source="st_johns",
+    )
+    db.insert_positions(
+        [
+            {
+                "vehicle_id": "v2",
+                "timestamp": ts,
+                "longitude": -52.81,
+                "latitude": 47.52,
+                "bearing": 0,
+                "speed": None,
+                "is_driving": None,
+            }
+        ],
+        now,
+        source="mt_pearl",
+    )
+
+    all_rows = db.get_latest_positions(limit=200)
+    assert len(all_rows) == 2
+
+    sj_rows = db.get_latest_positions(limit=200, source="st_johns")
+    assert len(sj_rows) == 1
+    assert sj_rows[0]["source"] == "st_johns"
+
+    db.close()
+    os.unlink(path)
+
+
 def test_get_latest_positions_with_trails_no_gap():
     """When all positions are within the gap threshold, the full trail is returned."""
     db, path = make_db()
