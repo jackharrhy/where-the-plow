@@ -120,8 +120,8 @@ def test_parse_aatracking_with_timestamp():
     assert len(positions) == 1
 
     assert vehicles[0]["vehicle_id"] == "17186"
-    assert vehicles[0]["description"] == "21-21D"
-    assert vehicles[0]["vehicle_type"] == "Large Snow Plow_Blue"
+    assert vehicles[0]["description"] == "21-21D (Large Snow Plow_Blue)"
+    assert vehicles[0]["vehicle_type"] == "LOADER"  # HEAVY_TYPE → LOADER
 
     assert positions[0]["vehicle_id"] == "17186"
     assert positions[0]["latitude"] == 47.520455
@@ -139,6 +139,8 @@ def test_parse_aatracking_without_timestamp():
         SAMPLE_PROVINCIAL_RESPONSE, collected_at=collected_at
     )
     assert len(vehicles) == 1
+    assert vehicles[0]["vehicle_type"] == "SA PLOW TRUCK"  # TRUCK_TYPE → SA PLOW TRUCK
+    assert vehicles[0]["description"] == "7452 F (Large Plow Full Plow Side Yellow)"
     assert positions[0]["timestamp"] == collected_at
     assert positions[0]["latitude"] == 48.986115
     assert positions[0]["speed"] is None

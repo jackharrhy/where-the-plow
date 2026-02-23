@@ -70,6 +70,14 @@ async def fetch_vehicles(client: httpx.AsyncClient) -> dict:
     return resp.json()
 
 
+# Map AATracking LOO_TYPE to normalized vehicle types matching St. John's AVL.
+# This keeps legend colors consistent across all sources.
+_AATRACKING_TYPE_MAP = {
+    "HEAVY_TYPE": "LOADER",
+    "TRUCK_TYPE": "SA PLOW TRUCK",
+}
+
+
 def parse_aatracking_response(
     data: list, collected_at: datetime | None = None
 ) -> tuple[list[dict], list[dict]]:
@@ -94,11 +102,19 @@ def parse_aatracking_response(
         else:
             ts = collected_at or datetime.now(timezone.utc)
 
+        # Normalize vehicle type from LOO_TYPE to match St. John's categories.
+        # LOO_DESCRIPTION (e.g. "Large Loader") goes into the description for detail popups.
+        loo_type = item.get("LOO_TYPE", "")
+        vehicle_type = _AATRACKING_TYPE_MAP.get(loo_type, loo_type or "Unknown")
+        veh_name = item.get("VEH_NAME", "")
+        loo_desc = item.get("LOO_DESCRIPTION", "")
+        description = f"{veh_name} ({loo_desc})" if loo_desc else veh_name
+
         vehicles.append(
             {
                 "vehicle_id": vehicle_id,
-                "description": item.get("VEH_NAME", ""),
-                "vehicle_type": item.get("LOO_DESCRIPTION", "Unknown"),
+                "description": description,
+                "vehicle_type": vehicle_type,
             }
         )
 
