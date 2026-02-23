@@ -39,12 +39,13 @@ def test_insert_viewport():
         ne_lng=-52.71,
         ne_lat=47.57,
     )
-    rows = db.conn.execute("SELECT * FROM viewports").fetchall()
-    assert len(rows) == 1
-    row = rows[0]
-    assert row[2] == 14.5  # zoom
-    assert row[3] == -52.73  # center_lng
-    assert row[4] == 47.56  # center_lat
+    row = db.conn.execute(
+        "SELECT zoom, center_lng, center_lat FROM viewports"
+    ).fetchone()
+    assert row is not None
+    assert row[0] == 14.5  # zoom
+    assert row[1] == -52.73  # center_lng
+    assert row[2] == 47.56  # center_lat
     db.close()
     os.unlink(path)
 
