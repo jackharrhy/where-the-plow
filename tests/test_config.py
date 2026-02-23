@@ -57,6 +57,7 @@ def test_source_config_has_required_fields():
         assert len(src.center) == 2
         assert src.zoom > 0
         assert src.parser in ("avl", "aatracking")
+        assert src.min_coverage_zoom >= 0
 
 
 def test_st_johns_has_referer():
@@ -72,6 +73,12 @@ def test_build_sources_uses_settings():
     assert sources["st_johns"].enabled == s.source_st_johns_enabled
     assert sources["mt_pearl"].api_url == s.mt_pearl_api_url
     assert sources["mt_pearl"].enabled == s.source_mt_pearl_enabled
+
+
+def test_source_min_coverage_zoom():
+    assert SOURCES["st_johns"].min_coverage_zoom == 10
+    assert SOURCES["mt_pearl"].min_coverage_zoom == 10
+    assert SOURCES["provincial"].min_coverage_zoom == 0
 
 
 def test_build_sources_respects_disabled(monkeypatch):

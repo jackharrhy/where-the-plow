@@ -1593,9 +1593,13 @@ class PlowApp {
     const toMs = toTime.getTime();
     const rangeMs = toMs - fromMs;
     const bounds = getPaddedBounds(plowMap.map, 0.2);
+    const zoom = plowMap.getZoom();
 
     const segmentFeatures = [];
     for (const feature of this.coverageData.features) {
+      // Skip sources not visible at this zoom level
+      const srcConfig = this.sources[feature.properties.source];
+      if (srcConfig && zoom < srcConfig.min_coverage_zoom) continue;
       const coords = feature.geometry.coordinates;
       const epochMs = feature.properties._epochMs;
       const color = vehicleColor(feature.properties.vehicle_type);
@@ -1638,9 +1642,13 @@ class PlowApp {
     const fromMs = fromTime.getTime();
     const toMs = toTime.getTime();
     const bounds = getPaddedBounds(plowMap.map, 0.2);
+    const zoom = plowMap.getZoom();
 
     const pointFeatures = [];
     for (const feature of this.coverageData.features) {
+      // Skip sources not visible at this zoom level
+      const srcConfig = this.sources[feature.properties.source];
+      if (srcConfig && zoom < srcConfig.min_coverage_zoom) continue;
       const coords = feature.geometry.coordinates;
       const epochMs = feature.properties._epochMs;
       for (let i = 0; i < coords.length; i++) {

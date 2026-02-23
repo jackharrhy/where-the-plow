@@ -155,6 +155,7 @@ def get_sources():
             "center": list(src.center),
             "zoom": src.zoom,
             "enabled": src.enabled,
+            "min_coverage_zoom": src.min_coverage_zoom,
         }
         for name, src in SOURCES.items()
         if src.enabled

@@ -12,6 +12,7 @@ class SourceConfig:
     parser: str  # "avl" or "aatracking"
     enabled: bool = True
     referer: str | None = None
+    min_coverage_zoom: int = 0  # below this zoom, hide in coverage view
 
 
 def build_sources(settings) -> dict[str, SourceConfig]:
@@ -31,6 +32,7 @@ def build_sources(settings) -> dict[str, SourceConfig]:
             parser="avl",
             referer="https://map.stjohns.ca/avl/",
             enabled=settings.source_st_johns_enabled,
+            min_coverage_zoom=10,
         ),
         "mt_pearl": SourceConfig(
             name="mt_pearl",
@@ -41,6 +43,7 @@ def build_sources(settings) -> dict[str, SourceConfig]:
             zoom=13,
             parser="aatracking",
             enabled=settings.source_mt_pearl_enabled,
+            min_coverage_zoom=10,
         ),
         "provincial": SourceConfig(
             name="provincial",
@@ -51,5 +54,6 @@ def build_sources(settings) -> dict[str, SourceConfig]:
             zoom=7,
             parser="aatracking",
             enabled=settings.source_provincial_enabled,
+            min_coverage_zoom=0,
         ),
     }
