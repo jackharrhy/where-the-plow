@@ -589,120 +589,8 @@ class PlowMap {
 
   /* ── Coverage ───────────────────────────────────── */
 
-  renderCoverageLines(segmentData) {
-    const source = this.map.getSource("coverage-lines");
-    if (source) {
-      source.setData(segmentData);
-    } else {
-      this.map.addSource("coverage-lines", {
-        type: "geojson",
-        data: segmentData,
-      });
-      this.map.addLayer({
-        id: "coverage-lines",
-        type: "line",
-        source: "coverage-lines",
-        paint: {
-          "line-color": ["get", "seg_color"],
-          "line-width": 3,
-          "line-opacity": ["get", "seg_opacity"],
-        },
-      });
-    }
-  }
-
-  renderHeatmap(pointData) {
-    const source = this.map.getSource("coverage-heatmap");
-    if (source) {
-      source.setData(pointData);
-    } else {
-      this.map.addSource("coverage-heatmap", {
-        type: "geojson",
-        data: pointData,
-      });
-      this.map.addLayer({
-        id: "coverage-heatmap",
-        type: "heatmap",
-        source: "coverage-heatmap",
-        paint: {
-          "heatmap-weight": 0.5,
-          "heatmap-intensity": [
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            10,
-            0.5,
-            12,
-            1,
-            15,
-            2,
-          ],
-          "heatmap-radius": [
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            10,
-            3,
-            12,
-            8,
-            14,
-            15,
-            16,
-            25,
-          ],
-          "heatmap-opacity": 0.75,
-          "heatmap-color": [
-            "interpolate",
-            ["linear"],
-            ["heatmap-density"],
-            0,
-            "rgba(0,0,0,0)",
-            0.15,
-            "#2563eb",
-            0.35,
-            "#60a5fa",
-            0.55,
-            "#fbbf24",
-            0.75,
-            "#f97316",
-            1.0,
-            "#ef4444",
-          ],
-        },
-      });
-    }
-  }
-
-  setCoverageLineVisibility(visible) {
-    if (this.map.getLayer("coverage-lines")) {
-      this.map.setLayoutProperty(
-        "coverage-lines",
-        "visibility",
-        visible ? "visible" : "none",
-      );
-    }
-  }
-
-  setHeatmapVisibility(visible) {
-    if (this.map.getLayer("coverage-heatmap")) {
-      this.map.setLayoutProperty(
-        "coverage-heatmap",
-        "visibility",
-        visible ? "visible" : "none",
-      );
-    }
-  }
-
   clearCoverage() {
     this.setDeckLayers([]);
-    if (this.map.getLayer("coverage-lines"))
-      this.map.removeLayer("coverage-lines");
-    if (this.map.getSource("coverage-lines"))
-      this.map.removeSource("coverage-lines");
-    if (this.map.getLayer("coverage-heatmap"))
-      this.map.removeLayer("coverage-heatmap");
-    if (this.map.getSource("coverage-heatmap"))
-      this.map.removeSource("coverage-heatmap");
   }
 
   setDeckLayers(layers) {
@@ -718,7 +606,6 @@ class PlowMap {
       "vehicle-outline",
       "vehicle-circles",
       "mini-trails",
-      "coverage-heatmap",
       "vehicle-trail-dots",
       "vehicle-trail-line",
     ];
@@ -1665,12 +1552,9 @@ class PlowApp {
       "</span>";
 
     if (this.coverageView === "lines") {
-      this.map.setHeatmapVisibility(false);
       this.renderCoverageLines(fromTime, toTime);
     } else {
-      this.map.setDeckLayers([]); // hide deck.gl trips layer
       this.renderHeatmap(fromTime, toTime);
-      this.map.setHeatmapVisibility(true);
     }
   }
 
@@ -1711,34 +1595,46 @@ class PlowApp {
   }
 
   renderHeatmap(fromTime, toTime) {
-    if (!this.coverageData) return;
-    const fromMs = fromTime.getTime();
-    const toMs = toTime.getTime();
+    if (!this.deckTrips) return;
+    const baseTime = this.coverageSince.getTime();
+    const fromOffset = fromTime.getTime() - baseTime;
+    const toOffset = toTime.getTime() - baseTime;
     const bounds = getPaddedBounds(plowMap.map, 0.2);
     const zoom = plowMap.getZoom();
 
-    const pointFeatures = [];
-    for (const feature of this.coverageData.features) {
-      // Fail-open: unknown sources are always shown (no config → no zoom gate)
-      const srcConfig = this.sources[feature.properties.source];
+    const points = [];
+    for (const trip of this.deckTrips) {
+      const srcConfig = this.sources[trip.source];
       if (srcConfig && zoom < srcConfig.min_coverage_zoom) continue;
-      const coords = feature.geometry.coordinates;
-      const epochMs = feature.properties._epochMs;
-      for (let i = 0; i < coords.length; i++) {
-        const tMs = epochMs[i];
-        if (tMs < fromMs) continue;
-        if (tMs > toMs) break;
-        if (!inBounds(coords[i], bounds)) continue;
-        pointFeatures.push({
-          type: "Feature",
-          geometry: { type: "Point", coordinates: coords[i] },
-          properties: { vehicle_type: feature.properties.vehicle_type, source: feature.properties.source },
-        });
+      if (!this.isSourceVisible(trip.source)) continue;
+      if (!this.isTypeVisible(trip.vehicleType)) continue;
+      for (let i = 0; i < trip.path.length; i++) {
+        const t = trip.timestamps[i];
+        if (t < fromOffset) continue;
+        if (t > toOffset) break;
+        if (!inBounds(trip.path[i], bounds)) continue;
+        points.push(trip.path[i]);
       }
     }
 
-    const data = { type: "FeatureCollection", features: pointFeatures };
-    this.map.renderHeatmap(data);
+    this.map.setDeckLayers([
+      new deck.HeatmapLayer({
+        id: "coverage-heatmap",
+        data: points,
+        getPosition: (d) => d,
+        getWeight: 1,
+        radiusPixels: 30,
+        intensity: 1.2,
+        threshold: 0.03,
+        colorRange: [
+          [37, 99, 235],
+          [96, 165, 250],
+          [251, 191, 36],
+          [249, 115, 22],
+          [239, 68, 68],
+        ],
+      }),
+    ]);
   }
 
   sliderToTime(val) {
@@ -1986,7 +1882,8 @@ document
 let coverageMoveTimeout = null;
 plowMap.on("moveend", () => {
   if (app.mode !== "coverage" || !app.coverageData) return;
-  if (app.playback.playing) return; // playback handles its own rendering
+  if (app.playback.playing) return;
+  if (app.coverageView !== "heatmap") return; // TripsLayer handles viewport internally
   clearTimeout(coverageMoveTimeout);
   coverageMoveTimeout = setTimeout(() => {
     const vals = timeSliderEl.noUiSlider.get().map(Number);
