@@ -1808,7 +1808,8 @@ btnHeatmap.addEventListener("click", () => app.switchCoverageView("heatmap"));
 // Slider
 timeSliderEl.noUiSlider.on("update", () => {
   const vals = timeSliderEl.noUiSlider.get().map(Number);
-  app.renderCoverage(vals[0], vals[1], app.playback.playing);
+  const throttle = app.playback.playing && app.coverageView === "heatmap";
+  app.renderCoverage(vals[0], vals[1], throttle);
 });
 
 // Legend source checkboxes
