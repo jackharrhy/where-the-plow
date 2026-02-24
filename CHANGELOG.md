@@ -9,13 +9,13 @@ while. Hovering over it tells you how long it's been. Vehicles that haven't
 reported a position recently are also hidden from the realtime view so the map
 only shows what's actually moving.
 
-[View changes](https://github.com/jackharrhy/where-the-plow/compare/e32ec39...HEAD)
+[View changes](https://github.com/jackharrhy/where-the-plow/compare/e32ec39...ff2cbce)
 
 ## 2026-02-23 — Ko-fi Support Button
 A "Support me on Ko-fi" button now appears in the sidebar, if you'd like to
 help keep the servers running.
 
-[View changes](https://github.com/jackharrhy/where-the-plow/compare/05efafa...5184464)
+[View changes](https://github.com/jackharrhy/where-the-plow/compare/05efafa...07a2b6b)
 
 ## 2026-02-23 — Multi-Source Tracking
 The map now tracks plows from Mount Pearl and the Provincial fleet alongside
