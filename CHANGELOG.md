@@ -1,5 +1,16 @@
-<!-- changelog-id: 8 -->
+<!-- changelog-id: 9 -->
 # Changelog
+
+## 2026-02-24 — Faster Coverage Rendering
+Coverage playback and the heatmap view are now powered by
+[deck.gl](https://deck.gl), a GPU-accelerated visualization library.
+Time-lapse playback is noticeably smoother — the map no longer rebuilds
+thousands of line segments every frame, it just tells the GPU what time it is.
+Coverage lines now have rounded caps and a fade trail. Most importantly,
+**playback now works with all sources enabled** instead of requiring you to
+select a single source first.
+
+[View changes](https://github.com/jackharrhy/where-the-plow/compare/ff2cbce...58db35a)
 
 ## 2026-02-24 - Stale Data Indicators
 The St. John's data source is currently experiencing technical difficulties on
