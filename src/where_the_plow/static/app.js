@@ -924,10 +924,6 @@ const btnPlay = document.getElementById("btn-play");
 const btnStop = document.getElementById("btn-stop");
 const playbackSpeedSelect = document.getElementById("playback-speed");
 const playbackFollowSelect = document.getElementById("playback-follow");
-const playbackMultiSourceHint = document.getElementById(
-  "playback-multi-source-hint",
-);
-const playbackControlsEl = document.getElementById("playback-controls");
 
 /* ── Stateless DOM helpers ─────────────────────────── */
 
@@ -1191,23 +1187,6 @@ class PlowApp {
     this.map.setTypeFilter(combined);
   }
 
-  /* -- Playback availability --------------------------------- */
-
-  /** Show/hide playback controls based on enabled source count. */
-  updatePlaybackAvailability() {
-    const multiSource =
-      Object.keys(this.sources).length > 1 && this.enabledSources.size !== 1;
-    if (playbackMultiSourceHint) {
-      playbackMultiSourceHint.style.display = multiSource ? "" : "none";
-    }
-    if (playbackControlsEl) {
-      playbackControlsEl.style.display = multiSource ? "none" : "";
-    }
-    if (multiSource && this.playback.playing) {
-      this.stopPlayback();
-    }
-  }
-
   /* -- Playback UI locking ---------------------------------- */
 
   lockPlaybackUI() {
@@ -1440,7 +1419,6 @@ class PlowApp {
     document.getElementById("db-size").style.display = "";
     vehicleHint.style.display = "none";
     coveragePanelEl.style.display = "block";
-    this.updatePlaybackAvailability();
     btnPlay.disabled = true;
 
     this.coveragePreset = "24";
@@ -1801,7 +1779,6 @@ document.getElementById("legend-sources").addEventListener("change", (e) => {
   app.applyFilters();
   app.populateFollowDropdown();
   if (app.mode === "coverage") {
-    app.updatePlaybackAvailability();
     const vals = timeSliderEl.noUiSlider.get().map(Number);
     app.renderCoverage(vals[0], vals[1]);
   }
