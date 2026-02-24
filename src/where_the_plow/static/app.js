@@ -353,6 +353,7 @@ class PlowMap {
   constructor(container, options) {
     this.map = new maplibregl.Map({ container, ...options });
     this.coverageAbort = null;
+    this.deckOverlay = null;
   }
 
   on(event, layerOrCb, cb) {
@@ -701,6 +702,12 @@ class PlowMap {
       this.map.removeLayer("coverage-heatmap");
     if (this.map.getSource("coverage-heatmap"))
       this.map.removeSource("coverage-heatmap");
+  }
+
+  setDeckLayers(layers) {
+    if (this.deckOverlay) {
+      this.deckOverlay.setProps({ layers });
+    }
   }
 
   /* ── Type filtering ─────────────────────────────── */
@@ -1970,6 +1977,10 @@ plowMap.on("moveend", () => {
 /* ── Map load: sources, layers, handlers ───────────── */
 
 plowMap.on("load", async () => {
+  // Initialize deck.gl overlay for coverage rendering
+  plowMap.deckOverlay = new deck.MapboxOverlay({ layers: [] });
+  plowMap.map.addControl(plowMap.deckOverlay);
+
   await app.loadSources();
 
   const rawData = await fetchVehicles();
