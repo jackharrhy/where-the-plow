@@ -694,6 +694,7 @@ class PlowMap {
   }
 
   clearCoverage() {
+    this.setDeckLayers([]);
     if (this.map.getLayer("coverage-lines"))
       this.map.removeLayer("coverage-lines");
     if (this.map.getSource("coverage-lines"))
@@ -717,7 +718,6 @@ class PlowMap {
       "vehicle-outline",
       "vehicle-circles",
       "mini-trails",
-      "coverage-lines",
       "coverage-heatmap",
       "vehicle-trail-dots",
       "vehicle-trail-line",
@@ -1667,61 +1667,47 @@ class PlowApp {
     if (this.coverageView === "lines") {
       this.map.setHeatmapVisibility(false);
       this.renderCoverageLines(fromTime, toTime);
-      this.map.setCoverageLineVisibility(true);
     } else {
-      this.map.setCoverageLineVisibility(false);
+      this.map.setDeckLayers([]); // hide deck.gl trips layer
       this.renderHeatmap(fromTime, toTime);
       this.map.setHeatmapVisibility(true);
     }
   }
 
   renderCoverageLines(fromTime, toTime) {
+    if (!this.deckTrips) return;
     const fromMs = fromTime.getTime();
     const toMs = toTime.getTime();
-    const rangeMs = toMs - fromMs;
-    const bounds = getPaddedBounds(plowMap.map, 0.2);
+    const baseTime = this.coverageSince.getTime();
+    const fromOffset = fromMs - baseTime;
+    const toOffset = toMs - baseTime;
     const zoom = plowMap.getZoom();
 
-    const segmentFeatures = [];
-    for (const feature of this.coverageData.features) {
-      // Fail-open: unknown sources are always shown (no config → no zoom gate)
-      const srcConfig = this.sources[feature.properties.source];
-      if (srcConfig && zoom < srcConfig.min_coverage_zoom) continue;
-      const coords = feature.geometry.coordinates;
-      const epochMs = feature.properties._epochMs;
-      const color = vehicleColor(feature.properties.vehicle_type);
+    // Filter trips by source zoom visibility and active filters
+    const visibleTrips = this.deckTrips.filter((t) => {
+      const srcConfig = this.sources[t.source];
+      if (srcConfig && zoom < srcConfig.min_coverage_zoom) return false;
+      if (!this.isSourceVisible(t.source)) return false;
+      if (!this.isTypeVisible(t.vehicleType)) return false;
+      return true;
+    });
 
-      for (let i = 0; i < coords.length - 1; i++) {
-        const tMs = epochMs[i];
-        const tNextMs = epochMs[i + 1];
-        if (tMs < fromMs) continue;
-        if (tNextMs > toMs) break;
-
-        // Viewport culling: skip if both endpoints are off-screen
-        if (!inBounds(coords[i], bounds) && !inBounds(coords[i + 1], bounds))
-          continue;
-
-        const progress = rangeMs > 0 ? (tMs - fromMs) / rangeMs : 1;
-        const opacity = 0.15 + progress * 0.65;
-
-        segmentFeatures.push({
-          type: "Feature",
-          geometry: {
-            type: "LineString",
-            coordinates: [coords[i], coords[i + 1]],
-          },
-          properties: {
-            seg_opacity: opacity,
-            seg_color: color,
-            vehicle_type: feature.properties.vehicle_type,
-            source: feature.properties.source,
-          },
-        });
-      }
-    }
-
-    const data = { type: "FeatureCollection", features: segmentFeatures };
-    this.map.renderCoverageLines(data);
+    this.map.setDeckLayers([
+      new deck.TripsLayer({
+        id: "coverage-trips",
+        data: visibleTrips,
+        getPath: (d) => d.path,
+        getTimestamps: (d) => d.timestamps,
+        getColor: (d) => d.color,
+        currentTime: toOffset,
+        trailLength: toOffset - fromOffset,
+        fadeTrail: true,
+        widthMinPixels: 4,
+        capRounded: true,
+        jointRounded: true,
+        shadowEnabled: false,
+      }),
+    ]);
   }
 
   renderHeatmap(fromTime, toTime) {
@@ -1943,6 +1929,8 @@ document.getElementById("legend-sources").addEventListener("change", (e) => {
   app.populateFollowDropdown();
   if (app.mode === "coverage") {
     app.updatePlaybackAvailability();
+    const vals = timeSliderEl.noUiSlider.get().map(Number);
+    app.renderCoverage(vals[0], vals[1]);
   }
 });
 
@@ -1975,6 +1963,10 @@ document.getElementById("legend-sources").addEventListener("click", (e) => {
 document.getElementById("legend-vehicles").addEventListener("change", () => {
   app.applyFilters();
   app.populateFollowDropdown();
+  if (app.mode === "coverage") {
+    const vals = timeSliderEl.noUiSlider.get().map(Number);
+    app.renderCoverage(vals[0], vals[1]);
+  }
 });
 
 // Playback controls
