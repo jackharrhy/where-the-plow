@@ -853,6 +853,16 @@ function vehicleColor(type) {
   return VEHICLE_COLORS[type] || DEFAULT_COLOR;
 }
 
+/** Return [R, G, B] for a vehicle type — used by deck.gl layers. */
+function vehicleColorRGB(type) {
+  const hex = vehicleColor(type);
+  return [
+    parseInt(hex.slice(1, 3), 16),
+    parseInt(hex.slice(3, 5), 16),
+    parseInt(hex.slice(5, 7), 16),
+  ];
+}
+
 function buildMiniTrails(data) {
   const features = [];
   for (const f of data.features) {
@@ -1128,6 +1138,7 @@ class PlowApp {
 
     // Coverage
     this.coverageData = null;
+    this.deckTrips = null;
     this.coverageSince = null;
     this.coverageUntil = null;
     this.coveragePreset = "24";
@@ -1541,6 +1552,7 @@ class PlowApp {
     this.map.clearCoverage();
     coveragePanelEl.style.display = "none";
     this.coverageData = null;
+    this.deckTrips = null;
     this.map.setVehiclesVisible(true);
     this.map.setMiniTrailsVisible(true);
     document.getElementById("vehicle-count").style.display = "";
@@ -1591,11 +1603,21 @@ class PlowApp {
       );
       this.coverageData = await resp.json();
       // Pre-parse timestamp strings to epoch ms (once, not per frame)
+      const baseTime = since.getTime();
       for (const feature of this.coverageData.features) {
         feature.properties._epochMs = feature.properties.timestamps.map(
           (t) => new Date(t).getTime()
         );
       }
+      // Transform to deck.gl trip format with float32-safe timestamp offsets
+      this.deckTrips = this.coverageData.features.map((f) => ({
+        path: f.geometry.coordinates,
+        timestamps: f.properties._epochMs.map((t) => t - baseTime),
+        color: vehicleColorRGB(f.properties.vehicle_type),
+        vehicleType: f.properties.vehicle_type,
+        source: f.properties.source,
+        vehicleId: f.properties.vehicle_id,
+      }));
     } catch (err) {
       if (err.name === "AbortError") return;
       throw err;
@@ -1736,6 +1758,12 @@ class PlowApp {
   sliderToTime(val) {
     const range = this.coverageUntil.getTime() - this.coverageSince.getTime();
     return new Date(this.coverageSince.getTime() + (val / 1000) * range);
+  }
+
+  /** Convert slider value (0-1000) to ms offset from coverageSince. */
+  sliderToOffsetMs(val) {
+    const range = this.coverageUntil.getTime() - this.coverageSince.getTime();
+    return (val / 1000) * range;
   }
 
   updateRangeLabel() {
