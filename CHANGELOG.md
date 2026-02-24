@@ -1,5 +1,15 @@
-<!-- changelog-id: 7 -->
+<!-- changelog-id: 8 -->
 # Changelog
+
+## 2026-02-24 — Stale Data Indicators
+The St. John's data source is currently experiencing technical difficulties on
+the city's end. To make situations like this visible, the map now shows an
+orange warning icon next to any source that hasn't received fresh data in a
+while. Hovering over it tells you how long it's been. Vehicles that haven't
+reported a position recently are also hidden from the realtime view so the map
+only shows what's actually moving.
+
+[View changes](https://github.com/jackharrhy/where-the-plow/compare/e32ec39...HEAD)
 
 ## 2026-02-23 — Ko-fi Support Button
 A "Support me on Ko-fi" button now appears in the sidebar, if you'd like to

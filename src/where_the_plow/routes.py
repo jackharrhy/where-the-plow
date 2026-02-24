@@ -140,14 +140,37 @@ def _rows_to_feature_collection(rows: list[dict], limit: int) -> FeatureCollecti
     )
 
 
+def _source_last_updated(snapshots: dict[str, dict], source_name: str) -> str | None:
+    """Derive the most recent vehicle timestamp from a source's cached snapshot."""
+    fc = snapshots.get(source_name)
+    if not fc:
+        return None
+    features = fc.get("features", [])
+    if not features:
+        return None
+    latest = max(
+        (
+            f["properties"]["timestamp"]
+            for f in features
+            if f.get("properties", {}).get("timestamp")
+        ),
+        default=None,
+    )
+    return latest
+
+
 @router.get(
     "/sources",
     summary="Available data sources",
-    description="Returns metadata about each configured plow data source.",
+    description="Returns metadata about each configured plow data source, "
+    "including the timestamp of the most recent vehicle position per source.",
     tags=["sources"],
 )
-def get_sources():
+def get_sources(request: Request):
     from where_the_plow.config import SOURCES
+
+    store = getattr(request.app.state, "store", {})
+    snapshots = store.get("realtime", {})
 
     return {
         name: {
@@ -156,6 +179,7 @@ def get_sources():
             "zoom": src.zoom,
             "enabled": src.enabled,
             "min_coverage_zoom": src.min_coverage_zoom,
+            "last_updated": _source_last_updated(snapshots, name),
         }
         for name, src in SOURCES.items()
         if src.enabled

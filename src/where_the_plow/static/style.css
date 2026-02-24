@@ -512,6 +512,23 @@ body {
     display: none;
 }
 
+.source-stale-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: #f59e0b;
+    color: #000;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    flex-shrink: 0;
+    margin-left: 4px;
+    cursor: help;
+}
+
 .legend-section-title {
     font-size: 0.65rem;
     text-transform: uppercase;

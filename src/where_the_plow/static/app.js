@@ -816,6 +816,8 @@ plowMap.on("moveend", () => {
 /* ── Utilities ─────────────────────────────────────── */
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const VEHICLE_STALE_MS = 2 * 60 * 60 * 1000; // hide vehicles not seen in 2 hours
+const SOURCE_STALE_MS = 30 * 60 * 1000; // warn if source has no data in 30 minutes
 
 const VEHICLE_COLORS = {
   "SA PLOW TRUCK": "#2563eb",
@@ -861,6 +863,17 @@ function formatTimestamp(ts) {
     minute: "2-digit",
     second: "2-digit",
   });
+}
+
+function formatDurationAgo(ms) {
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  const remainMin = minutes % 60;
+  if (hours < 24) return remainMin > 0 ? `${hours}h ${remainMin}m ago` : `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  const remainHrs = hours % 24;
+  return remainHrs > 0 ? `${days}d ${remainHrs}h ago` : `${days}d ago`;
 }
 
 /** Get padded viewport bounds for coverage culling. */
@@ -917,7 +930,7 @@ function updateVehicleCount(data) {
 }
 
 function filterRecentFeatures(data) {
-  const cutoff = Date.now() - ONE_DAY_MS;
+  const cutoff = Date.now() - VEHICLE_STALE_MS;
   return {
     ...data,
     features: data.features.filter(
@@ -1162,12 +1175,24 @@ class PlowApp {
 
       const text = document.createTextNode(src.display_name);
       label.appendChild(text);
+
+      // Staleness warning indicator
+      const staleIcon = document.createElement("span");
+      staleIcon.className = "source-stale-icon";
+      staleIcon.dataset.source = key;
+      staleIcon.textContent = "!";
+      staleIcon.style.display = "none";
+      label.appendChild(staleIcon);
+
       label.appendChild(cb);
 
       row.appendChild(zoomBtn);
       row.appendChild(label);
       container.appendChild(row);
     }
+
+    // Initial staleness check
+    this.updateSourceStaleness();
 
     // Also add a "Types" section title to the vehicle legend (idempotent)
     const vehicleLegend = document.getElementById("legend-vehicles");
@@ -1176,6 +1201,25 @@ class PlowApp {
       typeTitle.className = "legend-section-title";
       typeTitle.textContent = "Types";
       vehicleLegend.insertBefore(typeTitle, vehicleLegend.firstChild);
+    }
+  }
+
+  updateSourceStaleness() {
+    const now = Date.now();
+    for (const [key, src] of Object.entries(this.sources)) {
+      const icon = document.querySelector(`.source-stale-icon[data-source="${key}"]`);
+      if (!icon) continue;
+
+      const lastUpdated = src.last_updated ? new Date(src.last_updated).getTime() : 0;
+      const age = now - lastUpdated;
+
+      if (!src.last_updated || age > SOURCE_STALE_MS) {
+        const agoText = src.last_updated ? formatDurationAgo(age) : "never";
+        icon.title = `No data received (last: ${agoText})`;
+        icon.style.display = "";
+      } else {
+        icon.style.display = "none";
+      }
     }
   }
 
@@ -1686,6 +1730,7 @@ class PlowApp {
 
   startAutoRefresh() {
     if (this.refreshInterval) return;
+    this._sourceRefreshCounter = 0;
     this.refreshInterval = setInterval(async () => {
       if (this.mode !== "realtime") return;
       try {
@@ -1700,6 +1745,19 @@ class PlowApp {
       } catch (err) {
         console.error("Failed to refresh vehicles:", err);
       }
+
+      // Re-fetch sources every ~60s (10 ticks * 6s) to update staleness info
+      this._sourceRefreshCounter = (this._sourceRefreshCounter || 0) + 1;
+      if (this._sourceRefreshCounter >= 10) {
+        this._sourceRefreshCounter = 0;
+        try {
+          const resp = await fetch("/sources");
+          if (resp.ok) {
+            this.sources = await resp.json();
+          }
+        } catch (_) { /* ignore */ }
+      }
+      this.updateSourceStaleness();
     }, 6000);
   }
 
