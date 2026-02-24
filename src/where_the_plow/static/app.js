@@ -794,28 +794,6 @@ function formatDurationAgo(ms) {
   return remainHrs > 0 ? `${days}d ${remainHrs}h ago` : `${days}d ago`;
 }
 
-/** Get padded viewport bounds for coverage culling. */
-function getPaddedBounds(map, padding) {
-  const b = map.getBounds();
-  const padLng = (b.getEast() - b.getWest()) * padding;
-  const padLat = (b.getNorth() - b.getSouth()) * padding;
-  return {
-    west: b.getWest() - padLng,
-    south: b.getSouth() - padLat,
-    east: b.getEast() + padLng,
-    north: b.getNorth() + padLat,
-  };
-}
-
-function inBounds(coord, b) {
-  return (
-    coord[0] >= b.west &&
-    coord[0] <= b.east &&
-    coord[1] >= b.south &&
-    coord[1] <= b.north
-  );
-}
-
 function formatBytes(bytes) {
   if (bytes === null || bytes === undefined) return "";
   if (bytes < 1024) return bytes + " B";
@@ -1599,7 +1577,6 @@ class PlowApp {
     const baseTime = this.coverageSince.getTime();
     const fromOffset = fromTime.getTime() - baseTime;
     const toOffset = toTime.getTime() - baseTime;
-    const bounds = getPaddedBounds(plowMap.map, 0.2);
     const zoom = plowMap.getZoom();
 
     const points = [];
@@ -1612,7 +1589,6 @@ class PlowApp {
         const t = trip.timestamps[i];
         if (t < fromOffset) continue;
         if (t > toOffset) break;
-        if (!inBounds(trip.path[i], bounds)) continue;
         points.push(trip.path[i]);
       }
     }
@@ -1877,20 +1853,6 @@ playbackFollowSelect.addEventListener("change", () => {
 document
   .getElementById("detail-close")
   .addEventListener("click", () => app.closeDetail());
-
-/* ── Coverage: re-render on pan/zoom ───────────────── */
-
-let coverageMoveTimeout = null;
-plowMap.on("moveend", () => {
-  if (app.mode !== "coverage" || !app.coverageData) return;
-  if (app.playback.playing) return;
-  if (app.coverageView !== "heatmap") return; // TripsLayer handles viewport internally
-  clearTimeout(coverageMoveTimeout);
-  coverageMoveTimeout = setTimeout(() => {
-    const vals = timeSliderEl.noUiSlider.get().map(Number);
-    app.renderCoverage(vals[0], vals[1]);
-  }, 150);
-});
 
 /* ── Map load: sources, layers, handlers ───────────── */
 
