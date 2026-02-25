@@ -62,14 +62,30 @@ Go to `/admin` on the server. Login with the `ADMIN_PASSWORD` env var.
 
 ### Setting up a new agent
 
-1. Have your volunteer download the binary from GitHub Releases, or pull
-   the Docker image
-2. They run it: `./plow-agent --server https://plow.jackharrhy.dev`
-3. It generates a keypair, registers with the server, and prints
-   "Waiting for approval..."
+**Easiest path (binary):**
+
+1. Have your volunteer download the binary from GitHub Releases
+2. They double-click it (or run `./plow-agent` with no arguments)
+3. The setup wizard prompts for server URL and agent name, generates a
+   keypair, registers, and **installs itself as a system service**
 4. You see it appear as "pending" in the admin panel
 5. Click "Approve"
-6. The agent starts fetching and reporting within seconds
+6. The agent starts fetching and reporting within seconds, and survives
+   reboots automatically
+
+**Interactive mode** (Docker, development, or no-root scenarios):
+
+1. Run: `./plow-agent --run --server https://plow.jackharrhy.dev`
+2. Same registration flow but runs in the foreground
+
+**Power-user service management:**
+
+```
+plow-agent --service install --server URL   # install manually
+plow-agent --service start                  # start the service
+plow-agent --service status                 # check status
+plow-agent --service uninstall              # remove the service
+```
 
 ### When an agent gets WAF'd
 
@@ -183,7 +199,8 @@ src/where_the_plow/
   static/admin/      — admin panel (HTML/JS/CSS)
 
 agent/
-  main.go            — entry point, backoff/hibernate loop
+  main.go            — entry point, CLI routing (wizard/run/service control)
+  service.go         — kardianos/service integration (Start/Stop, fetch loop)
   client.go          — register, checkin, report HTTP calls
   fetch.go           — AVL fetch with browser mimicry
   config.go          — credential storage (~/.config/plow-agent/)

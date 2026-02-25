@@ -27,7 +27,7 @@ spec:
       containers:
         - name: plow-agent
           image: ghcr.io/jackharrhy/plow-agent:latest
-          args: ["--server", "https://plow.jackharrhy.dev"]
+          args: ["--run", "--server", "https://plow.jackharrhy.dev"]
           env:
             - name: PLOW_NAME
               value: "your-name-here"

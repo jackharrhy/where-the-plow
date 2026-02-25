@@ -15,21 +15,55 @@ The city publishes real-time plow locations on their [AVL map](https://map.stjoh
 
 Your credentials are stored locally and reused on subsequent runs. The agent uses minimal resources and runs quietly in the background.
 
-## Running
+## Quick start (recommended)
 
-### Binary
-
-Download the latest release for your platform, then:
+Download the latest release for your platform, then just run it:
 
 ```
-./plow-agent --server https://plow.jackharrhy.dev
+./plow-agent
 ```
 
-On first run it will ask for a name to identify your agent (e.g. "alice-laptop"). The keypair and name are saved to `~/.config/plow-agent/` so you only do this once.
+This launches an interactive setup wizard that:
+1. Asks for the server URL (defaults to `https://plow.jackharrhy.dev`)
+2. Prompts for a name to identify your agent (e.g. "alice-laptop")
+3. Generates your cryptographic keypair
+4. Registers with the server
+5. Installs itself as a **system service** (systemd on Linux, launchd on macOS, Windows service)
+6. Starts the service automatically
 
-That's it. Leave it running and the server operator will approve you.
+After setup, the agent runs in the background and survives reboots. You don't need to keep a terminal open.
 
-### Docker
+**Note:** Installing a system service usually requires administrator/root privileges. On Linux, run with `sudo`. On macOS, you may get a permissions prompt. On Windows, run as Administrator.
+
+## Running interactively
+
+If you prefer not to install a service (or for Docker/development use):
+
+```
+./plow-agent --run --server https://plow.jackharrhy.dev
+```
+
+This runs the agent in the foreground. Press Ctrl+C to stop.
+
+## Managing the service
+
+Once installed, you can control the service with:
+
+```
+plow-agent --service status      # Check if running
+plow-agent --service stop        # Stop the service
+plow-agent --service start       # Start the service
+plow-agent --service restart     # Restart the service
+plow-agent --service uninstall   # Remove the service
+```
+
+### Viewing logs
+
+- **Linux (systemd):** `journalctl -u plow-agent -f`
+- **macOS (launchd):** `log show --predicate 'process == "plow-agent"' --last 1h`
+- **Windows:** Event Viewer > Application logs
+
+## Docker
 
 ```
 docker run -d \
@@ -48,7 +82,7 @@ To build the image yourself:
 docker build -t plow-agent agent/
 ```
 
-### Kubernetes
+## Kubernetes
 
 A ready-made manifest is included at [`k8s.yaml`](k8s.yaml). Edit `PLOW_NAME` to your name, then:
 
@@ -62,9 +96,11 @@ This creates a small PVC for key persistence and a Deployment running the agent.
 
 | Flag / Env Var | Required | Description |
 |---|---|---|
-| `--server` / `PLOW_SERVER` | Yes | Plow server URL |
+| `--server` / `PLOW_SERVER` | Yes (for `--run`) | Plow server URL |
+| `--run` | No | Run in foreground instead of installing as service |
+| `--service <action>` | No | Control installed service: install, uninstall, start, stop, restart, status |
 | `PLOW_NAME` | Docker/K8s only | Agent name (binary prompts interactively) |
-| `PLOW_DATA_DIR` | No | Override config directory (default: `~/.config/plow-agent/`, or `/data` when `PLOW_DATA_DIR` is set) |
+| `PLOW_DATA_DIR` | No | Override config directory (default: `~/.config/plow-agent/`, or `/data` when set) |
 
 ## What gets stored locally
 
