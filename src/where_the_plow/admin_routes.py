@@ -81,7 +81,7 @@ async def list_agents(request: Request, admin_token: str | None = Cookie(default
             {
                 "agent_id": a["agent_id"],
                 "name": a["name"],
-                "enabled": a["enabled"],
+                "status": a["status"],
                 "created_at": (
                     a["created_at"].isoformat()
                     if isinstance(a["created_at"], datetime)
@@ -94,6 +94,8 @@ async def list_agents(request: Request, admin_token: str | None = Cookie(default
                 ),
                 "total_reports": a["total_reports"],
                 "failed_reports": a["failed_reports"],
+                "ip": a["ip"],
+                "system_info": a["system_info"],
             }
         )
     return result
@@ -121,6 +123,20 @@ async def create_agent(
     }
 
 
+@router.post("/agents/{agent_id}/approve")
+async def approve_agent(
+    agent_id: str,
+    request: Request,
+    admin_token: str | None = Cookie(default=None),
+):
+    if not _check_auth(admin_token):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+    db: Database = request.app.state.db
+    db.approve_agent(agent_id)
+    return {"ok": True}
+
+
 @router.post("/agents/{agent_id}/revoke")
 async def revoke_agent(
     agent_id: str,
@@ -145,7 +161,9 @@ async def admin_status(
     db: Database = request.app.state.db
     agents = db.list_agents()
     total = len(agents)
-    active = sum(1 for a in agents if a["enabled"] and a["last_seen_at"] is not None)
+    active = sum(
+        1 for a in agents if a["status"] == "approved" and a["last_seen_at"] is not None
+    )
 
     return {
         "total_agents": total,

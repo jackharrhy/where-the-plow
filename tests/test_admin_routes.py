@@ -118,6 +118,30 @@ def test_create_agent(admin_client):
     assert data["private_key"].startswith("-----BEGIN EC PRIVATE KEY-----")
 
 
+# ── Approve agent tests ──────────────────────────────────────────────
+
+
+def test_approve_agent(admin_client):
+    client, db = admin_client
+    # Create a pending agent directly in DB
+    db.create_agent("pending-1", "Pending Agent", "pk_test", status="pending")
+    agent = db.get_agent("pending-1")
+    assert agent is not None
+    assert agent["status"] == "pending"
+
+    cookies = _auth_cookies(client)
+    with patch(
+        "where_the_plow.admin_routes._get_admin_password", return_value=ADMIN_SECRET
+    ):
+        resp = client.post("/admin/agents/pending-1/approve", cookies=cookies)
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+
+    agent = db.get_agent("pending-1")
+    assert agent is not None
+    assert agent["status"] == "approved"
+
+
 # ── Revoke agent tests ───────────────────────────────────────────────
 
 
@@ -144,7 +168,7 @@ def test_revoke_agent(admin_client):
         assert revoke_resp.status_code == 200
         assert revoke_resp.json() == {"ok": True}
 
-    # Verify it's disabled in the DB
+    # Verify it's revoked in the DB
     agent = db.get_agent(agent_id)
     assert agent is not None
-    assert agent["enabled"] is False
+    assert agent["status"] == "revoked"

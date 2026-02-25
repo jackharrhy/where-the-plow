@@ -1,5 +1,5 @@
 # tests/test_agent_routes.py
-"""Tests for agent checkin and report API endpoints."""
+"""Tests for agent checkin, report, and registration API endpoints."""
 
 import json
 import os
@@ -87,7 +87,7 @@ def test_checkin_unknown_agent(agent_client):
     assert resp.status_code == 401
 
 
-def test_checkin_disabled_agent(agent_client):
+def test_checkin_revoked_agent(agent_client):
     db = app.state.db
     private_pem, _, agent_id, _ = _register_agent(db)
     db.disable_agent(agent_id)
@@ -97,6 +97,90 @@ def test_checkin_disabled_agent(agent_client):
     resp = agent_client.post("/agents/checkin", content=body, headers=headers)
 
     assert resp.status_code == 403
+    data = resp.json()
+    assert data["status"] == "revoked"
+    assert data["message"] == "Agent revoked"
+
+
+def test_checkin_pending_agent(agent_client):
+    db = app.state.db
+    private_pem, public_pem = generate_keypair()
+    agent_id = agent_id_from_public_key(public_pem)
+    db.create_agent(agent_id, "pending-agent", public_pem, status="pending")
+
+    body = b""
+    headers = _sign_request(private_pem, agent_id, body)
+    resp = agent_client.post("/agents/checkin", content=body, headers=headers)
+
+    assert resp.status_code == 403
+    data = resp.json()
+    assert data["status"] == "pending"
+    assert data["message"] == "Agent pending approval"
+
+
+# ── Registration tests ────────────────────────────────────────────────
+
+
+def test_register_new_agent(agent_client):
+    private_pem, public_pem = generate_keypair()
+    body = json.dumps(
+        {"name": "new-agent", "public_key": public_pem, "system_info": "linux"}
+    ).encode()
+    resp = agent_client.post("/agents/register", content=body)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "pending"
+    assert "agent_id" in data
+
+    # Verify in DB
+    db = app.state.db
+    agent = db.get_agent(data["agent_id"])
+    assert agent is not None
+    assert agent["status"] == "pending"
+    assert agent["system_info"] == "linux"
+
+
+def test_register_existing_agent(agent_client):
+    db = app.state.db
+    private_pem, public_pem, agent_id, _ = _register_agent(db)
+
+    body = json.dumps({"name": "duplicate", "public_key": public_pem}).encode()
+    resp = agent_client.post("/agents/register", content=body)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["agent_id"] == agent_id
+    assert data["status"] == "approved"  # already approved via _register_agent
+
+
+def test_register_missing_fields(agent_client):
+    body = json.dumps({"name": ""}).encode()
+    resp = agent_client.post("/agents/register", content=body)
+    assert resp.status_code == 400
+
+
+def test_register_invalid_json(agent_client):
+    resp = agent_client.post("/agents/register", content=b"not json")
+    assert resp.status_code == 400
+
+
+def test_register_then_checkin_pending(agent_client):
+    """Full flow: register -> pending -> checkin returns 403."""
+    private_pem, public_pem = generate_keypair()
+
+    # Register
+    body = json.dumps({"name": "flow-agent", "public_key": public_pem}).encode()
+    resp = agent_client.post("/agents/register", content=body)
+    assert resp.status_code == 200
+    agent_id = resp.json()["agent_id"]
+
+    # Checkin should be rejected
+    body = b""
+    headers = _sign_request(private_pem, agent_id, body)
+    resp = agent_client.post("/agents/checkin", content=body, headers=headers)
+    assert resp.status_code == 403
+    assert resp.json()["status"] == "pending"
 
 
 # ── Report tests ──────────────────────────────────────────────────────

@@ -1,13 +1,13 @@
 # src/where_the_plow/agent_routes.py
-"""Agent checkin and report API endpoints."""
+"""Agent checkin, report, and self-registration API endpoints."""
 
 import json
 import logging
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
-from where_the_plow.agent_auth import verify_signature
+from where_the_plow.agent_auth import agent_id_from_public_key, verify_signature
 from where_the_plow.collector import process_poll
 from where_the_plow.coordinator import Coordinator
 from where_the_plow.db import Database
@@ -16,6 +16,12 @@ from where_the_plow.snapshot import build_realtime_snapshot
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agents", tags=["agents"])
+
+
+def _client_ip(request: Request) -> str:
+    return request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (
+        request.client.host if request.client else "unknown"
+    )
 
 
 async def _authenticate_agent(
@@ -43,8 +49,11 @@ async def _authenticate_agent(
     if agent is None:
         return None, body, "Unknown agent"
 
-    if not agent["enabled"]:
-        return agent, body, "Agent disabled"
+    if agent["status"] == "pending":
+        return agent, body, "Agent pending approval"
+
+    if agent["status"] == "revoked":
+        return agent, body, "Agent revoked"
 
     if not verify_signature(agent["public_key"], body, agent_ts, agent_sig):
         return None, body, "Invalid signature"
@@ -53,10 +62,43 @@ async def _authenticate_agent(
 
 
 def _get_current_schedule(db: Database) -> dict:
-    """List enabled agents and compute the schedule."""
+    """List approved agents and compute the schedule."""
     agents = db.list_agents()
-    enabled_ids = [a["agent_id"] for a in agents if a["enabled"]]
-    return Coordinator.compute_schedule(enabled_ids)
+    approved_ids = [a["agent_id"] for a in agents if a["status"] == "approved"]
+    return Coordinator.compute_schedule(approved_ids)
+
+
+@router.post("/register")
+async def agent_register(request: Request):
+    """Self-registration for new agents. No auth required."""
+    body = await request.body()
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return Response(status_code=400, content="Invalid JSON")
+
+    name = data.get("name", "").strip()
+    public_key = data.get("public_key", "").strip()
+    system_info = data.get("system_info", "")
+
+    if not name or not public_key:
+        return Response(status_code=400, content="name and public_key required")
+
+    try:
+        agent_id = agent_id_from_public_key(public_key)
+    except Exception:
+        return Response(status_code=400, content="Invalid public key")
+
+    db: Database = request.app.state.db
+    existing = db.get_agent(agent_id)
+    if existing:
+        # Already registered — return current status
+        return {"agent_id": agent_id, "status": existing["status"]}
+
+    ip = _client_ip(request)
+    db.register_agent(agent_id, name, public_key, ip=ip, system_info=system_info)
+    logger.info("New agent registered: %s (%s) from %s", agent_id, name, ip)
+    return {"agent_id": agent_id, "status": "pending"}
 
 
 @router.post("/checkin")
@@ -65,8 +107,11 @@ async def checkin(request: Request):
 
     if error == "Unknown agent":
         return JSONResponse({"error": error}, status_code=401)
-    if error == "Agent disabled":
-        return JSONResponse({"error": error}, status_code=403)
+    if error in ("Agent pending approval", "Agent revoked"):
+        return JSONResponse(
+            {"status": agent["status"] if agent else "unknown", "message": error},
+            status_code=403,
+        )
     if error is not None:
         return JSONResponse({"error": error}, status_code=401)
 
@@ -81,8 +126,11 @@ async def report(request: Request):
 
     if error == "Unknown agent":
         return JSONResponse({"error": error}, status_code=401)
-    if error == "Agent disabled":
-        return JSONResponse({"error": error}, status_code=403)
+    if error in ("Agent pending approval", "Agent revoked"):
+        return JSONResponse(
+            {"status": agent["status"] if agent else "unknown", "message": error},
+            status_code=403,
+        )
     if error is not None:
         return JSONResponse({"error": error}, status_code=401)
 

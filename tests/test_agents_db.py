@@ -25,11 +25,18 @@ def test_create_agent(db):
     assert agent["agent_id"] == "agent-1"
     assert agent["name"] == "My Agent"
     assert agent["public_key"] == "pk_abc123"
-    assert agent["enabled"] is True
+    assert agent["status"] == "approved"
     assert agent["created_at"] is not None
     assert agent["last_seen_at"] is None
     assert agent["total_reports"] == 0
     assert agent["failed_reports"] == 0
+    assert agent["ip"] is None
+    assert agent["system_info"] is None
+
+
+def test_create_agent_custom_status(db):
+    agent = db.create_agent("agent-1", "My Agent", "pk_abc123", status="pending")
+    assert agent["status"] == "pending"
 
 
 def test_get_agent(db):
@@ -59,7 +66,38 @@ def test_disable_agent(db):
     db.disable_agent("agent-1")
     agent = db.get_agent("agent-1")
     assert agent is not None
-    assert agent["enabled"] is False
+    assert agent["status"] == "revoked"
+
+
+def test_approve_agent(db):
+    agent = db.create_agent("agent-1", "My Agent", "pk_abc123", status="pending")
+    assert agent["status"] == "pending"
+    db.approve_agent("agent-1")
+    agent = db.get_agent("agent-1")
+    assert agent is not None
+    assert agent["status"] == "approved"
+
+
+def test_register_agent(db):
+    agent = db.register_agent(
+        "agent-1", "My Agent", "pk_abc123", ip="1.2.3.4", system_info="linux"
+    )
+    assert agent["agent_id"] == "agent-1"
+    assert agent["status"] == "pending"
+    assert agent["ip"] == "1.2.3.4"
+    assert agent["system_info"] == "linux"
+    assert agent["total_reports"] == 0
+
+
+def test_register_then_approve(db):
+    db.register_agent("agent-1", "My Agent", "pk_abc123")
+    agent = db.get_agent("agent-1")
+    assert agent is not None
+    assert agent["status"] == "pending"
+    db.approve_agent("agent-1")
+    agent = db.get_agent("agent-1")
+    assert agent is not None
+    assert agent["status"] == "approved"
 
 
 def test_update_agent_seen(db):

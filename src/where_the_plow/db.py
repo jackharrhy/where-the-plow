@@ -479,23 +479,54 @@ class Database:
             "agent_id": row[0],
             "name": row[1],
             "public_key": row[2],
-            "enabled": row[3],
+            "status": row[3],
             "created_at": row[4],
             "last_seen_at": row[5],
             "total_reports": row[6],
             "failed_reports": row[7],
+            "ip": row[8],
+            "system_info": row[9],
         }
 
-    def create_agent(self, agent_id: str, name: str, public_key: str) -> dict:
+    _AGENT_COLS = (
+        "agent_id, name, public_key, status, created_at, last_seen_at, "
+        "total_reports, failed_reports, ip, system_info"
+    )
+
+    def create_agent(
+        self, agent_id: str, name: str, public_key: str, status: str = "approved"
+    ) -> dict:
         """Insert a new agent and return its dict representation."""
         now = datetime.now(timezone.utc)
         cur = self._cursor()
         cur.execute(
             """
-            INSERT INTO agents (agent_id, name, public_key, enabled, created_at, last_seen_at, total_reports, failed_reports)
-            VALUES (?, ?, ?, TRUE, ?, NULL, 0, 0)
+            INSERT INTO agents (agent_id, name, public_key, status, created_at, last_seen_at, total_reports, failed_reports)
+            VALUES (?, ?, ?, ?, ?, NULL, 0, 0)
             """,
-            [agent_id, name, public_key, now],
+            [agent_id, name, public_key, status, now],
+        )
+        agent = self.get_agent(agent_id)
+        assert agent is not None  # just inserted
+        return agent
+
+    def register_agent(
+        self,
+        agent_id: str,
+        name: str,
+        public_key: str,
+        ip: str | None = None,
+        system_info: str | None = None,
+    ) -> dict:
+        """Self-register a new agent with status='pending'."""
+        now = datetime.now(timezone.utc)
+        cur = self._cursor()
+        cur.execute(
+            """
+            INSERT INTO agents (agent_id, name, public_key, status, created_at, last_seen_at, total_reports, failed_reports, ip, system_info)
+            VALUES (?, ?, ?, 'pending', ?, NULL, 0, 0, ?, ?)
+            """,
+            [agent_id, name, public_key, now, ip, system_info],
         )
         agent = self.get_agent(agent_id)
         assert agent is not None  # just inserted
@@ -506,8 +537,7 @@ class Database:
         row = (
             self._cursor()
             .execute(
-                "SELECT agent_id, name, public_key, enabled, created_at, last_seen_at, total_reports, failed_reports "
-                "FROM agents WHERE agent_id = ?",
+                f"SELECT {self._AGENT_COLS} FROM agents WHERE agent_id = ?",
                 [agent_id],
             )
             .fetchone()
@@ -520,18 +550,22 @@ class Database:
         """Return all agents ordered by created_at."""
         rows = (
             self._cursor()
-            .execute(
-                "SELECT agent_id, name, public_key, enabled, created_at, last_seen_at, total_reports, failed_reports "
-                "FROM agents ORDER BY created_at"
-            )
+            .execute(f"SELECT {self._AGENT_COLS} FROM agents ORDER BY created_at")
             .fetchall()
         )
         return [self._agent_row_to_dict(r) for r in rows]
 
-    def disable_agent(self, agent_id: str) -> None:
-        """Disable an agent by setting enabled=FALSE."""
+    def approve_agent(self, agent_id: str) -> None:
+        """Approve an agent by setting status='approved'."""
         self._cursor().execute(
-            "UPDATE agents SET enabled = FALSE WHERE agent_id = ?",
+            "UPDATE agents SET status = 'approved' WHERE agent_id = ?",
+            [agent_id],
+        )
+
+    def disable_agent(self, agent_id: str) -> None:
+        """Revoke an agent by setting status='revoked'."""
+        self._cursor().execute(
+            "UPDATE agents SET status = 'revoked' WHERE agent_id = ?",
             [agent_id],
         )
 
