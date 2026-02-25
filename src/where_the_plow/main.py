@@ -58,6 +58,14 @@ app.include_router(agent_router)
 app.include_router(admin_router)
 
 STATIC_DIR = Path(__file__).parent / "static"
+ADMIN_STATIC_DIR = STATIC_DIR / "admin"
+
+
+@app.get("/admin", include_in_schema=False)
+def admin_page():
+    return FileResponse(str(ADMIN_STATIC_DIR / "index.html"))
+
+
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
