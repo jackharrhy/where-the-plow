@@ -78,5 +78,5 @@ def test_record_failed_report(db):
     agent = db.get_agent("agent-1")
     assert agent is not None
     assert agent["last_seen_at"] is not None
-    assert agent["total_reports"] == 1
+    assert agent["total_reports"] == 0
     assert agent["failed_reports"] == 1

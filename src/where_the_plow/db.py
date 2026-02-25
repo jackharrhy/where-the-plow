@@ -536,7 +536,7 @@ class Database:
         )
 
     def record_agent_report(self, agent_id: str, success: bool) -> None:
-        """Update last_seen_at and increment total_reports (and failed_reports if not success)."""
+        """Update last_seen_at and increment total_reports on success or failed_reports on failure."""
         now = datetime.now(timezone.utc)
         if success:
             self._cursor().execute(
@@ -545,7 +545,7 @@ class Database:
             )
         else:
             self._cursor().execute(
-                "UPDATE agents SET last_seen_at = ?, total_reports = total_reports + 1, "
+                "UPDATE agents SET last_seen_at = ?, "
                 "failed_reports = failed_reports + 1 WHERE agent_id = ?",
                 [now, agent_id],
             )
