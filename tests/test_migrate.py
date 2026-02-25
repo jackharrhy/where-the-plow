@@ -373,7 +373,7 @@ def test_002_migrates_prod_db(tmp_path):
     )
     run_migrations(conn, migrations_dir)
 
-    assert get_version(conn) == 2
+    assert get_version(conn) == 3
 
     # Vehicles should have source column with composite PK
     veh_cols = {
@@ -416,6 +416,39 @@ def test_002_migrates_prod_db(tmp_path):
     assert count > 0  # og-prod-plow.db has ~917k rows
 
     conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Migration 003 tests
+# ---------------------------------------------------------------------------
+
+
+def test_003_adds_agents_table(tmp_path):
+    """Migration 003 creates the agents table with expected columns."""
+    conn = duckdb.connect(str(tmp_path / "test.db"))
+    conn.execute("INSTALL spatial; LOAD spatial")
+
+    migrations_dir = (
+        Path(__file__).parent.parent / "src" / "where_the_plow" / "migrations"
+    )
+    run_migrations(conn, migrations_dir)
+
+    rows = conn.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name='agents' ORDER BY ordinal_position"
+    ).fetchall()
+    col_names = [r[0] for r in rows]
+    assert "agent_id" in col_names
+    assert "public_key" in col_names
+    assert "enabled" in col_names
+    assert "total_reports" in col_names
+
+    conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Idempotency / stamp tests
+# ---------------------------------------------------------------------------
 
 
 def test_already_migrated_db_gets_stamped(tmp_path):
@@ -489,6 +522,6 @@ def test_already_migrated_db_gets_stamped(tmp_path):
     )
     run_migrations(conn, migrations_dir)
 
-    # Should be stamped at version 2 with no errors
-    assert get_version(conn) == 2
+    # Should be stamped at version 3 with no errors
+    assert get_version(conn) == 3
     conn.close()
