@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+var version = "dev"
+
 func waitForApproval(cfg *Config) Schedule {
 	for {
 		schedule, status, err := checkin(cfg)
@@ -26,8 +28,13 @@ func waitForApproval(cfg *Config) Schedule {
 }
 
 func main() {
+	showVersion := flag.Bool("version", false, "Print version and exit")
 	server := flag.String("server", os.Getenv("PLOW_SERVER"), "Plow server URL")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println("plow-agent", version)
+		os.Exit(0)
+	}
 	if *server == "" {
 		fmt.Fprintln(os.Stderr, "Error: --server or PLOW_SERVER is required")
 		flag.Usage()
