@@ -100,10 +100,6 @@ Deduplication is by `(vehicle_id, timestamp, source)` composite key -- if the AP
 
 There are also `viewports` (analytics) and `signups` (email signups) tables -- see `db.py` for their full schemas.
 
-## Contributing data
-
-The St. John's data source relies on volunteers running a lightweight agent that fetches public plow GPS data from their own IP addresses. If you'd like to help keep the data flowing, see the [**plow-agent README**](agent/README.md) for setup instructions -- it takes about a minute.
-
 ## Stack
 
-Python 3.12, FastAPI, DuckDB (spatial), httpx, MapLibre GL JS, noUiSlider, Go (agent), Docker.
+Python 3.12, FastAPI, DuckDB (spatial), httpx, MapLibre GL JS, noUiSlider, Docker.

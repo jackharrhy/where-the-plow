@@ -9,5 +9,4 @@ dist/
 .ruff_cache/
 src/where_the_plow/static/changelog.html
 tmp
-agent/plow-agent
 .DS_Store

@@ -6,14 +6,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from where_the_plow import collector
 from where_the_plow.config import settings
 from where_the_plow.db import Database
-from where_the_plow.admin_routes import router as admin_router
-from where_the_plow.agent_routes import router as agent_router
 from where_the_plow.routes import router
 
 logging.basicConfig(
@@ -54,18 +52,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(router)
-app.include_router(agent_router)
-app.include_router(admin_router)
 
 STATIC_DIR = Path(__file__).parent / "static"
-ADMIN_STATIC_DIR = STATIC_DIR / "admin"
-
-
-@app.get("/admin", include_in_schema=False)
-def admin_page():
-    return FileResponse(str(ADMIN_STATIC_DIR / "index.html"))
-
-
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 

@@ -1,20 +1,24 @@
-<!-- changelog-id: 11 -->
+<!-- changelog-id: 12 -->
 # Changelog
 
-## 2026-02-25 - St. John's Data Restored (Again)
-The city rebuilt their plow tracking page, which broke our data feed for the
-second time today. We lost about two hours of data, but we're back again.
+## 2026-02-25 — Agent System Removed, Direct AVL Access Restored
+Someone lovely from the City of St. John's reached out and explained what had
+happened with the plow tracking service. The authentication issues that broke
+our data feed have been resolved on their end, and the server is back to
+operating without any workarounds needed.
 
-[View changes](https://github.com/jackharrhy/where-the-plow/compare/5dc3f4b...cec8c88)
+While the service was down, we built a distributed agent system so volunteers
+could help keep the data flowing by running a small Go binary that fetched plow
+data from their own IP addresses. It included ECDSA signature verification, an
+admin panel for managing agents, automatic health tracking with backoff, a
+coordinator for scheduling, and cross-platform service support — roughly 6,300
+lines of code across Go, Python, HTML/CSS/JS, tests, CI pipelines, and docs.
+Thanks to everyone who helped set that up and offered to run agents.
 
-## 2026-02-25 - St. John's Data Restored
-The city added authentication to their plow tracking service, which broke our
-data feed. We've worked around it by scraping the token from the city's own
-public-facing map page and using that to authenticate. A great use of tax
-payers' dollars putting a login wall in front of a handful of snowplow GPS
-dots, but we're back in business.
+Thankfully, all of that can now be removed. The plow tracker is back to
+talking directly to the city's AVL server, the way it was always meant to work.
 
-[View changes](https://github.com/jackharrhy/where-the-plow/compare/c5a1ccb...5dc3f4b)
+[View changes](https://github.com/jackharrhy/where-the-plow/compare/cec8c88...a7c2cd2)
 
 ## 2026-02-24 - Faster Coverage Rendering
 Coverage playback and the heatmap view are now powered by [deck.gl](https://deck.gl), a GPU-accelerated visualization library. Time-lapse playback is noticeably smoother — the map no longer rebuilds thousands of line segments every frame, it just tells the GPU what time it is. Coverage lines now have rounded caps and a fade trail. Most importantly, **playback now works with all sources enabled** instead of requiring you to select a single source first.

@@ -8,4 +8,3 @@ services:
     environment:
       - DB_PATH=/data/plow.db
       - POLL_INTERVAL=6
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}

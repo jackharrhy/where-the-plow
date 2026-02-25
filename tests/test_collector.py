@@ -323,85 +323,6 @@ async def test_poll_source_cancellation_is_clean():
 # ── Async test: fetch_source behavior ────────────────────────────────
 
 
-async def test_poll_source_respects_pause():
-    """When a source is paused, poll_source should skip fetching."""
-    db, path = make_db()
-    store = {"collector_paused": {"test_source"}}
-    config = _test_source_config()
-
-    call_count = 0
-    resume_after = 2  # resume after 2 paused sleep cycles
-
-    async def fake_fetch(client, source):
-        nonlocal call_count
-        call_count += 1
-        return _make_aatracking_response()
-
-    original_sleep = asyncio.sleep
-    sleep_count = 0
-    done_event = asyncio.Event()
-
-    async def fake_sleep(seconds):
-        nonlocal sleep_count
-        sleep_count += 1
-        if sleep_count == resume_after:
-            # Unpause after 2 sleep cycles
-            store["collector_paused"].discard("test_source")
-        if call_count >= 1:
-            # We got one successful fetch after resume — done
-            done_event.set()
-            await original_sleep(999)
-        await original_sleep(0)
-
-    with (
-        patch("where_the_plow.collector.fetch_source", side_effect=fake_fetch),
-        patch("where_the_plow.collector.asyncio.sleep", side_effect=fake_sleep),
-    ):
-        task = asyncio.create_task(poll_source(db, store, config))
-        await asyncio.wait_for(done_event.wait(), timeout=5.0)
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-
-    # fetch should have been called exactly once (after resume)
-    assert call_count == 1
-    # There should have been paused sleep cycles before the fetch
-    assert sleep_count >= resume_after
-
-    db.close()
-    os.unlink(path)
-
-
-def test_is_source_paused():
-    from where_the_plow.collector import _is_source_paused
-
-    assert _is_source_paused({}, "st_johns") is False
-    assert _is_source_paused({"collector_paused": set()}, "st_johns") is False
-    assert _is_source_paused({"collector_paused": {"st_johns"}}, "st_johns") is True
-    assert _is_source_paused({"collector_paused": {"st_johns"}}, "mt_pearl") is False
-
-
-def test_should_skip_direct_fetch_agents_active():
-    from where_the_plow.collector import _should_skip_direct_fetch
-
-    assert _should_skip_direct_fetch(last_agent_report_age=10, threshold=30) is True
-
-
-def test_should_skip_direct_fetch_agents_stale():
-    from where_the_plow.collector import _should_skip_direct_fetch
-
-    assert _should_skip_direct_fetch(last_agent_report_age=60, threshold=30) is False
-
-
-def test_should_skip_direct_fetch_no_agents():
-    from where_the_plow.collector import _should_skip_direct_fetch
-
-    assert _should_skip_direct_fetch(last_agent_report_age=None, threshold=30) is False
-
-
-# ── Async test: fetch_source behavior ────────────────────────────────
-
-
 async def test_fetch_source_raises_on_http_error():
     """fetch_source should propagate HTTP errors (raise_for_status)."""
     config = _test_source_config(
@@ -417,10 +338,10 @@ async def test_fetch_source_raises_on_http_error():
 
 
 async def test_fetch_source_avl_sends_referer():
-    """AVL sources should send the Referer header (no token needed — portal proxy)."""
+    """AVL sources should send the Referer header."""
     config = _test_source_config(
         parser="avl",
-        api_url="https://map.stjohns.ca/portal/sharing/servers/abc/rest/services/AVL/MapServer/0/query",
+        api_url="https://map.stjohns.ca/mapsrv/rest/services/AVL/MapServer/0/query",
         referer="https://map.stjohns.ca/avl/",
     )
 

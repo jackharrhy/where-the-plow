@@ -11,7 +11,7 @@ dependencies = [
     "pytz>=2025.2",
     "pydantic-settings>=2.13.1",
     "pydantic>=2.12.5",
-    "cryptography>=46.0.5",
+
 ]
 
 [project.optional-dependencies]

@@ -179,9 +179,6 @@ async def fetch_source(client: httpx.AsyncClient, source) -> dict | list:
     params = {}
 
     if source.parser == "avl":
-        # The AVL data is served through an ArcGIS Enterprise portal proxy
-        # that handles authentication server-side.  No API token is needed;
-        # only the Referer header must match the public AVL page.
         params = {
             "f": "json",
             "outFields": "*",

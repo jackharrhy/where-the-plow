@@ -15,16 +15,12 @@ class Settings(BaseSettings):
 
     # Source API URLs
     avl_api_url: str = (
-        "https://map.stjohns.ca/portal/sharing/servers/"
-        "e99efa79b60948dda2939a7d08204a61/rest/services/AVL/MapServer/0/query"
+        "https://map.stjohns.ca/mapsrv/rest/services/AVL/MapServer/0/query"
     )
     mt_pearl_api_url: str = "https://gps5.aatracking.com/api/MtPearlPortal/GetPlows"
     provincial_api_url: str = (
         "https://gps5.aatracking.com/api/NewfoundlandPortal/GetPlows"
     )
-
-    # Admin
-    admin_password: str | None = None
 
     # Source enable/disable
     source_st_johns_enabled: bool = True

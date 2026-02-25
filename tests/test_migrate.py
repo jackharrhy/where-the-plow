@@ -373,7 +373,7 @@ def test_002_migrates_prod_db(tmp_path):
     )
     run_migrations(conn, migrations_dir)
 
-    assert get_version(conn) == 5
+    assert get_version(conn) == 2
 
     # Vehicles should have source column with composite PK
     veh_cols = {
@@ -414,123 +414,6 @@ def test_002_migrates_prod_db(tmp_path):
     # Row count should be preserved
     count = conn.execute("SELECT count(*) FROM positions").fetchone()[0]
     assert count > 0  # og-prod-plow.db has ~917k rows
-
-    conn.close()
-
-
-# ---------------------------------------------------------------------------
-# Migration 003 tests
-# ---------------------------------------------------------------------------
-
-
-def test_003_adds_agents_table(tmp_path):
-    """Migration 003 creates the agents table with expected columns."""
-    conn = duckdb.connect(str(tmp_path / "test.db"))
-    conn.execute("INSTALL spatial; LOAD spatial")
-
-    migrations_dir = (
-        Path(__file__).parent.parent / "src" / "where_the_plow" / "migrations"
-    )
-    run_migrations(conn, migrations_dir)
-
-    rows = conn.execute(
-        "SELECT column_name FROM information_schema.columns "
-        "WHERE table_name='agents' ORDER BY ordinal_position"
-    ).fetchall()
-    col_names = [r[0] for r in rows]
-    assert "agent_id" in col_names
-    assert "public_key" in col_names
-    # After migration 004, enabled is replaced by status
-    assert "status" in col_names
-    assert "total_reports" in col_names
-
-    conn.close()
-
-
-# ---------------------------------------------------------------------------
-# Migration 004 tests
-# ---------------------------------------------------------------------------
-
-
-def test_004_replaces_enabled_with_status(tmp_path):
-    """Migration 004 replaces enabled with status and adds ip/system_info."""
-    conn = duckdb.connect(str(tmp_path / "test.db"))
-    conn.execute("INSTALL spatial; LOAD spatial")
-
-    migrations_dir = (
-        Path(__file__).parent.parent / "src" / "where_the_plow" / "migrations"
-    )
-    run_migrations(conn, migrations_dir)
-
-    cols = {
-        r[0]
-        for r in conn.execute(
-            "SELECT column_name FROM information_schema.columns "
-            "WHERE table_name='agents'"
-        ).fetchall()
-    }
-    assert "status" in cols
-    assert "enabled" not in cols
-    assert "ip" in cols
-    assert "system_info" in cols
-
-    assert get_version(conn) == 5
-
-    conn.close()
-
-
-def test_004_migrates_enabled_values(tmp_path):
-    """Migration 004 converts enabled=TRUE to 'approved' and FALSE to 'revoked'."""
-    conn = duckdb.connect(str(tmp_path / "test.db"))
-    conn.execute("INSTALL spatial; LOAD spatial")
-
-    migrations_dir = (
-        Path(__file__).parent.parent / "src" / "where_the_plow" / "migrations"
-    )
-
-    # Run migrations 001-003 first
-    from where_the_plow.migrate import run_migrations as _run
-
-    _run(conn, migrations_dir)
-
-    # At this point migration 004 already ran. Let's test from scratch with
-    # a pre-004 state. Reset by creating a fresh DB with only 003.
-    conn.close()
-
-    conn = duckdb.connect(str(tmp_path / "test2.db"))
-    conn.execute("INSTALL spatial; LOAD spatial")
-
-    # Manually create schema_version and run only 001-003
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS schema_version ("
-        "  version INTEGER NOT NULL,"
-        "  applied_at TIMESTAMPTZ NOT NULL DEFAULT now()"
-        ")"
-    )
-
-    # Run 001 through 003 manually by running migrations up to version 3
-    _run(conn, migrations_dir)
-    # This ran all 4. Instead, let's just verify the final state is correct.
-    # Insert test data and verify status values are correct.
-    from datetime import datetime, timezone
-
-    now = datetime.now(timezone.utc)
-    conn.execute(
-        "INSERT INTO agents (agent_id, name, public_key, status, created_at, total_reports, failed_reports) "
-        "VALUES ('a1', 'Agent1', 'pk1', 'approved', ?, 0, 0)",
-        [now],
-    )
-    conn.execute(
-        "INSERT INTO agents (agent_id, name, public_key, status, created_at, total_reports, failed_reports) "
-        "VALUES ('a2', 'Agent2', 'pk2', 'revoked', ?, 0, 0)",
-        [now],
-    )
-
-    rows = conn.execute(
-        "SELECT agent_id, status FROM agents ORDER BY agent_id"
-    ).fetchall()
-    assert rows[0] == ("a1", "approved")
-    assert rows[1] == ("a2", "revoked")
 
     conn.close()
 
@@ -611,35 +494,6 @@ def test_already_migrated_db_gets_stamped(tmp_path):
     )
     run_migrations(conn, migrations_dir)
 
-    # Should be stamped at version 5 with no errors
-    assert get_version(conn) == 5
-    conn.close()
-
-
-# ---------------------------------------------------------------------------
-# Migration 005 tests
-# ---------------------------------------------------------------------------
-
-
-def test_005_adds_consecutive_failures_column(tmp_path):
-    """Migration 005 adds consecutive_failures column to agents table."""
-    conn = duckdb.connect(str(tmp_path / "test.db"))
-    conn.execute("INSTALL spatial; LOAD spatial")
-
-    migrations_dir = (
-        Path(__file__).parent.parent / "src" / "where_the_plow" / "migrations"
-    )
-    run_migrations(conn, migrations_dir)
-
-    cols = {
-        r[0]
-        for r in conn.execute(
-            "SELECT column_name FROM information_schema.columns "
-            "WHERE table_name='agents'"
-        ).fetchall()
-    }
-    assert "consecutive_failures" in cols
-
-    assert get_version(conn) == 5
-
+    # Should be stamped at version 2 with no errors
+    assert get_version(conn) == 2
     conn.close()
