@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 import duckdb
-from datetime import datetime
+from datetime import datetime, timezone
 from itertools import groupby
 
 
@@ -471,6 +471,84 @@ class Database:
             .fetchone()
         )
         return row[0] if row else 0
+
+    # -- Agent CRUD -------------------------------------------------------------
+
+    def _agent_row_to_dict(self, row) -> dict:
+        return {
+            "agent_id": row[0],
+            "name": row[1],
+            "public_key": row[2],
+            "enabled": row[3],
+            "created_at": row[4],
+            "last_seen_at": row[5],
+            "total_reports": row[6],
+            "failed_reports": row[7],
+        }
+
+    def create_agent(self, agent_id: str, name: str, public_key: str) -> dict:
+        """Insert a new agent and return its dict representation."""
+        now = datetime.now(timezone.utc)
+        cur = self._cursor()
+        cur.execute(
+            """
+            INSERT INTO agents (agent_id, name, public_key, enabled, created_at, last_seen_at, total_reports, failed_reports)
+            VALUES (?, ?, ?, TRUE, ?, NULL, 0, 0)
+            """,
+            [agent_id, name, public_key, now],
+        )
+        agent = self.get_agent(agent_id)
+        assert agent is not None  # just inserted
+        return agent
+
+    def get_agent(self, agent_id: str) -> dict | None:
+        """Return an agent dict by agent_id, or None if not found."""
+        row = (
+            self._cursor()
+            .execute(
+                "SELECT agent_id, name, public_key, enabled, created_at, last_seen_at, total_reports, failed_reports "
+                "FROM agents WHERE agent_id = ?",
+                [agent_id],
+            )
+            .fetchone()
+        )
+        if row is None:
+            return None
+        return self._agent_row_to_dict(row)
+
+    def list_agents(self) -> list[dict]:
+        """Return all agents ordered by created_at."""
+        rows = (
+            self._cursor()
+            .execute(
+                "SELECT agent_id, name, public_key, enabled, created_at, last_seen_at, total_reports, failed_reports "
+                "FROM agents ORDER BY created_at"
+            )
+            .fetchall()
+        )
+        return [self._agent_row_to_dict(r) for r in rows]
+
+    def disable_agent(self, agent_id: str) -> None:
+        """Disable an agent by setting enabled=FALSE."""
+        self._cursor().execute(
+            "UPDATE agents SET enabled = FALSE WHERE agent_id = ?",
+            [agent_id],
+        )
+
+    def record_agent_report(self, agent_id: str, success: bool) -> None:
+        """Update last_seen_at and increment total_reports (and failed_reports if not success)."""
+        now = datetime.now(timezone.utc)
+        if success:
+            self._cursor().execute(
+                "UPDATE agents SET last_seen_at = ?, total_reports = total_reports + 1 WHERE agent_id = ?",
+                [now, agent_id],
+            )
+        else:
+            self._cursor().execute(
+                "UPDATE agents SET last_seen_at = ?, total_reports = total_reports + 1, "
+                "failed_reports = failed_reports + 1 WHERE agent_id = ?",
+                [now, agent_id],
+            )
 
     def close(self):
         self.conn.close()
