@@ -323,6 +323,27 @@ async def test_poll_source_cancellation_is_clean():
 # ── Async test: fetch_source behavior ────────────────────────────────
 
 
+def test_should_skip_direct_fetch_agents_active():
+    from where_the_plow.collector import _should_skip_direct_fetch
+
+    assert _should_skip_direct_fetch(last_agent_report_age=10, threshold=30) is True
+
+
+def test_should_skip_direct_fetch_agents_stale():
+    from where_the_plow.collector import _should_skip_direct_fetch
+
+    assert _should_skip_direct_fetch(last_agent_report_age=60, threshold=30) is False
+
+
+def test_should_skip_direct_fetch_no_agents():
+    from where_the_plow.collector import _should_skip_direct_fetch
+
+    assert _should_skip_direct_fetch(last_agent_report_age=None, threshold=30) is False
+
+
+# ── Async test: fetch_source behavior ────────────────────────────────
+
+
 async def test_fetch_source_raises_on_http_error():
     """fetch_source should propagate HTTP errors (raise_for_status)."""
     config = _test_source_config(
