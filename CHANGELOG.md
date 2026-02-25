@@ -1,21 +1,19 @@
 <!-- changelog-id: 12 -->
 # Changelog
 
-## 2026-02-25 — Agent System Removed, Direct AVL Access Restored
-Someone lovely from the City of St. John's reached out and explained what had
-happened with the plow tracking service. The authentication issues that broke
-our data feed have been resolved on their end, and the server is back to
-operating without any workarounds needed.
+## 2026-02-25 — Agent System Removed, Direct AVL Access Restored!
+Someone lovely from the City of reached out and explained what had
+happened with the plow tracking service.
 
-While the service was down, we built a distributed agent system so volunteers
+While the service was down, I built a distributed agent system so volunteers
 could help keep the data flowing by running a small Go binary that fetched plow
-data from their own IP addresses. It included ECDSA signature verification, an
-admin panel for managing agents, automatic health tracking with backoff, a
-coordinator for scheduling, and cross-platform service support — roughly 6,300
-lines of code across Go, Python, HTML/CSS/JS, tests, CI pipelines, and docs.
-Thanks to everyone who helped set that up and offered to run agents.
+data from their systems.
 
-Thankfully, all of that can now be removed. The plow tracker is back to
+ECDSA signature verification / admin panel / scheduling coordinator / multi-platform
+system service configuration - roughly 6,300 lines of code across Go, Python,
+HTML/CSS/JS, tests, CI pipelines, and docs.
+
+Thankfully, **all of that can now be removed**. The plow tracker is back to
 talking directly to the city's AVL server, the way it was always meant to work.
 
 [View changes](https://github.com/jackharrhy/where-the-plow/compare/cec8c88...a7c2cd2)
