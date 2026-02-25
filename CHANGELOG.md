@@ -16,7 +16,7 @@ HTML/CSS/JS, tests, CI pipelines, and docs.
 Thankfully, **all of that can now be removed**. The plow tracker is back to
 talking directly to the city's AVL server, the way it was always meant to work.
 
-[View changes](https://github.com/jackharrhy/where-the-plow/compare/cec8c88...a7c2cd2)
+[View changes](https://github.com/jackharrhy/where-the-plow/compare/cec8c88...4dfb8c9)
 
 ## 2026-02-24 - Faster Coverage Rendering
 Coverage playback and the heatmap view are now powered by [deck.gl](https://deck.gl), a GPU-accelerated visualization library. Time-lapse playback is noticeably smoother — the map no longer rebuilds thousands of line segments every frame, it just tells the GPU what time it is. Coverage lines now have rounded caps and a fade trail. Most importantly, **playback now works with all sources enabled** instead of requiring you to select a single source first.
