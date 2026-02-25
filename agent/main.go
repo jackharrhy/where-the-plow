@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -9,6 +10,12 @@ import (
 	"os"
 	"time"
 )
+
+// errorBody builds a JSON {"error": "..."} payload with proper escaping.
+func errorBody(err error) []byte {
+	b, _ := json.Marshal(map[string]string{"error": err.Error()})
+	return b
+}
 
 var version = "dev"
 
@@ -111,7 +118,7 @@ func main() {
 					log.Printf("Hibernate probe fetch failed (%d consecutive): %v",
 						consecutiveFailures, err)
 					// Report the failure to the server
-					body = []byte(fmt.Sprintf(`{"error": "%s"}`, err.Error()))
+					body = errorBody(err)
 					report(cfg, body)
 					continue
 				}
@@ -146,7 +153,7 @@ func main() {
 		if err != nil {
 			consecutiveFailures++
 			log.Printf("Fetch error (%d consecutive): %v", consecutiveFailures, err)
-			body = []byte(fmt.Sprintf(`{"error": "%s"}`, err.Error()))
+			body = errorBody(err)
 			report(cfg, body)
 			continue
 		}
