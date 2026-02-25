@@ -118,3 +118,38 @@ def test_record_failed_report(db):
     assert agent["last_seen_at"] is not None
     assert agent["total_reports"] == 0
     assert agent["failed_reports"] == 1
+
+
+# ── Consecutive failures tracking ─────────────────────────────────────
+
+
+def test_consecutive_failures_increments_on_failure(db):
+    db.create_agent("agent-1", "My Agent", "pk_abc123")
+    db.record_agent_report("agent-1", success=False)
+    db.record_agent_report("agent-1", success=False)
+    db.record_agent_report("agent-1", success=False)
+    agent = db.get_agent("agent-1")
+    assert agent is not None
+    assert agent["consecutive_failures"] == 3
+    assert agent["failed_reports"] == 3
+
+
+def test_consecutive_failures_resets_on_success(db):
+    db.create_agent("agent-1", "My Agent", "pk_abc123")
+    db.record_agent_report("agent-1", success=False)
+    db.record_agent_report("agent-1", success=False)
+    agent = db.get_agent("agent-1")
+    assert agent is not None
+    assert agent["consecutive_failures"] == 2
+
+    db.record_agent_report("agent-1", success=True)
+    agent = db.get_agent("agent-1")
+    assert agent is not None
+    assert agent["consecutive_failures"] == 0
+    assert agent["total_reports"] == 1
+    assert agent["failed_reports"] == 2
+
+
+def test_consecutive_failures_starts_at_zero(db):
+    agent = db.create_agent("agent-1", "My Agent", "pk_abc123")
+    assert agent["consecutive_failures"] == 0

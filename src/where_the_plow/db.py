@@ -486,11 +486,12 @@ class Database:
             "failed_reports": row[7],
             "ip": row[8],
             "system_info": row[9],
+            "consecutive_failures": row[10] if len(row) > 10 else 0,
         }
 
     _AGENT_COLS = (
         "agent_id, name, public_key, status, created_at, last_seen_at, "
-        "total_reports, failed_reports, ip, system_info"
+        "total_reports, failed_reports, ip, system_info, consecutive_failures"
     )
 
     def create_agent(
@@ -570,17 +571,23 @@ class Database:
         )
 
     def record_agent_report(self, agent_id: str, success: bool) -> None:
-        """Update last_seen_at and increment total_reports on success or failed_reports on failure."""
+        """Update last_seen_at and increment total_reports on success or failed_reports on failure.
+
+        On success, resets consecutive_failures to 0.
+        On failure, increments both failed_reports and consecutive_failures.
+        """
         now = datetime.now(timezone.utc)
         if success:
             self._cursor().execute(
-                "UPDATE agents SET last_seen_at = ?, total_reports = total_reports + 1 WHERE agent_id = ?",
+                "UPDATE agents SET last_seen_at = ?, total_reports = total_reports + 1, "
+                "consecutive_failures = 0 WHERE agent_id = ?",
                 [now, agent_id],
             )
         else:
             self._cursor().execute(
                 "UPDATE agents SET last_seen_at = ?, "
-                "failed_reports = failed_reports + 1 WHERE agent_id = ?",
+                "failed_reports = failed_reports + 1, "
+                "consecutive_failures = consecutive_failures + 1 WHERE agent_id = ?",
                 [now, agent_id],
             )
 

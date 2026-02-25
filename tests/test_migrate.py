@@ -373,7 +373,7 @@ def test_002_migrates_prod_db(tmp_path):
     )
     run_migrations(conn, migrations_dir)
 
-    assert get_version(conn) == 4
+    assert get_version(conn) == 5
 
     # Vehicles should have source column with composite PK
     veh_cols = {
@@ -474,7 +474,7 @@ def test_004_replaces_enabled_with_status(tmp_path):
     assert "ip" in cols
     assert "system_info" in cols
 
-    assert get_version(conn) == 4
+    assert get_version(conn) == 5
 
     conn.close()
 
@@ -611,6 +611,35 @@ def test_already_migrated_db_gets_stamped(tmp_path):
     )
     run_migrations(conn, migrations_dir)
 
-    # Should be stamped at version 4 with no errors
-    assert get_version(conn) == 4
+    # Should be stamped at version 5 with no errors
+    assert get_version(conn) == 5
+    conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Migration 005 tests
+# ---------------------------------------------------------------------------
+
+
+def test_005_adds_consecutive_failures_column(tmp_path):
+    """Migration 005 adds consecutive_failures column to agents table."""
+    conn = duckdb.connect(str(tmp_path / "test.db"))
+    conn.execute("INSTALL spatial; LOAD spatial")
+
+    migrations_dir = (
+        Path(__file__).parent.parent / "src" / "where_the_plow" / "migrations"
+    )
+    run_migrations(conn, migrations_dir)
+
+    cols = {
+        r[0]
+        for r in conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name='agents'"
+        ).fetchall()
+    }
+    assert "consecutive_failures" in cols
+
+    assert get_version(conn) == 5
+
     conn.close()
