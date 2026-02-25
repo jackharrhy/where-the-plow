@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from where_the_plow import collector
 from where_the_plow.config import settings
 from where_the_plow.db import Database
+from where_the_plow.admin_routes import router as admin_router
 from where_the_plow.agent_routes import router as agent_router
 from where_the_plow.routes import router
 
@@ -54,6 +55,7 @@ app = FastAPI(
 )
 app.include_router(router)
 app.include_router(agent_router)
+app.include_router(admin_router)
 
 STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

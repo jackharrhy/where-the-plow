@@ -23,6 +23,9 @@ class Settings(BaseSettings):
         "https://gps5.aatracking.com/api/NewfoundlandPortal/GetPlows"
     )
 
+    # Admin
+    admin_password: str | None = None
+
     # Source enable/disable
     source_st_johns_enabled: bool = True
     source_mt_pearl_enabled: bool = True
