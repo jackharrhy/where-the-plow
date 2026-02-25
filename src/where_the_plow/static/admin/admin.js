@@ -24,7 +24,11 @@ const keyAgentName = document.getElementById("key-agent-name");
 const keyCopyBtn = document.getElementById("key-copy-btn");
 const keyCloseBtn = document.getElementById("key-close-btn");
 
+const collectorStJohnsBtn = document.getElementById("collector-st-johns-btn");
+const collectorStJohnsStatus = document.getElementById("collector-st-johns-status");
+
 let refreshTimer = null;
+let stjohnsPaused = false;
 
 // ── Helpers ─────────────────────────────────────────
 
@@ -138,6 +142,45 @@ async function loadStatus() {
   const data = await resp.json();
   statusText.textContent =
     data.active_agents + " active / " + data.total_agents + " total agents";
+
+  // Update collector pause state
+  const paused = (data.paused_sources || []);
+  stjohnsPaused = paused.includes("st_johns");
+  renderCollectorStatus();
+}
+
+function renderCollectorStatus() {
+  if (stjohnsPaused) {
+    collectorStJohnsStatus.textContent = "paused";
+    collectorStJohnsStatus.className = "badge badge-paused";
+    collectorStJohnsBtn.textContent = "Resume";
+    collectorStJohnsBtn.className = "btn-small btn-approve";
+  } else {
+    collectorStJohnsStatus.textContent = "running";
+    collectorStJohnsStatus.className = "badge badge-approved";
+    collectorStJohnsBtn.textContent = "Pause";
+    collectorStJohnsBtn.className = "btn-small btn-revoke";
+  }
+}
+
+async function toggleStJohnsCollector() {
+  const endpoint = stjohnsPaused ? "/admin/collector/resume" : "/admin/collector/pause";
+  collectorStJohnsBtn.disabled = true;
+
+  try {
+    const resp = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source: "st_johns" }),
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      stjohnsPaused = (data.paused_sources || []).includes("st_johns");
+      renderCollectorStatus();
+    }
+  } finally {
+    collectorStJohnsBtn.disabled = false;
+  }
 }
 
 // ── Rendering ───────────────────────────────────────
@@ -173,6 +216,21 @@ function renderAgents(agents) {
     badge.textContent = a.status;
     tdStatus.appendChild(badge);
     tr.appendChild(tdStatus);
+
+    // Health
+    const tdHealth = document.createElement("td");
+    if (a.status === "approved") {
+      const hBadge = document.createElement("span");
+      hBadge.className = "badge badge-health-" + a.health;
+      hBadge.textContent = a.health;
+      if (a.consecutive_failures > 0) {
+        hBadge.title = a.consecutive_failures + " consecutive failures";
+      }
+      tdHealth.appendChild(hBadge);
+    } else {
+      tdHealth.textContent = "-";
+    }
+    tr.appendChild(tdHealth);
 
     // IP
     const tdIp = document.createElement("td");
@@ -294,6 +352,8 @@ refreshBtn.addEventListener("click", () => {
   loadAgents();
   loadStatus();
 });
+
+collectorStJohnsBtn.addEventListener("click", toggleStJohnsCollector);
 
 keyCopyBtn.addEventListener("click", async () => {
   try {

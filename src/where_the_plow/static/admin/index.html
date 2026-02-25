@@ -39,6 +39,19 @@
         <div id="admin-view" class="hidden">
             <div class="container">
                 <div class="section-header">
+                    <h2>Collector</h2>
+                </div>
+                <div id="collector-controls" class="collector-controls">
+                    <div class="collector-source">
+                        <div class="collector-source-info">
+                            <span class="collector-source-name">St. John's</span>
+                            <span id="collector-st-johns-status" class="badge badge-approved">running</span>
+                        </div>
+                        <button id="collector-st-johns-btn" class="btn-small btn-revoke">Pause</button>
+                    </div>
+                </div>
+
+                <div class="section-header">
                     <h2>Agents</h2>
                     <button id="refresh-btn" title="Refresh">Refresh</button>
                 </div>
@@ -49,6 +62,7 @@
                                 <th>Name</th>
                                 <th>ID</th>
                                 <th>Status</th>
+                                <th>Health</th>
                                 <th>IP</th>
                                 <th>Last Seen</th>
                                 <th>Reports</th>

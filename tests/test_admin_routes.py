@@ -172,3 +172,121 @@ def test_revoke_agent(admin_client):
     agent = db.get_agent(agent_id)
     assert agent is not None
     assert agent["status"] == "revoked"
+
+
+# ── Collector pause/resume tests ─────────────────────────────────────
+
+
+def test_pause_collector(admin_client):
+    client, db = admin_client
+    cookies = _auth_cookies(client)
+    with patch(
+        "where_the_plow.admin_routes._get_admin_password", return_value=ADMIN_SECRET
+    ):
+        resp = client.post(
+            "/admin/collector/pause",
+            json={"source": "st_johns"},
+            cookies=cookies,
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ok"] is True
+    assert "st_johns" in data["paused_sources"]
+
+
+def test_resume_collector(admin_client):
+    client, db = admin_client
+    cookies = _auth_cookies(client)
+    with patch(
+        "where_the_plow.admin_routes._get_admin_password", return_value=ADMIN_SECRET
+    ):
+        # Pause first
+        client.post(
+            "/admin/collector/pause",
+            json={"source": "st_johns"},
+            cookies=cookies,
+        )
+        # Then resume
+        resp = client.post(
+            "/admin/collector/resume",
+            json={"source": "st_johns"},
+            cookies=cookies,
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ok"] is True
+    assert "st_johns" not in data["paused_sources"]
+
+
+def test_status_includes_paused_sources(admin_client):
+    client, db = admin_client
+    cookies = _auth_cookies(client)
+    with patch(
+        "where_the_plow.admin_routes._get_admin_password", return_value=ADMIN_SECRET
+    ):
+        # Check status before pausing
+        resp = client.get("/admin/status", cookies=cookies)
+        assert resp.status_code == 200
+        assert resp.json()["paused_sources"] == []
+
+        # Pause and check again
+        client.post(
+            "/admin/collector/pause",
+            json={"source": "st_johns"},
+            cookies=cookies,
+        )
+        resp = client.get("/admin/status", cookies=cookies)
+        assert resp.status_code == 200
+        assert "st_johns" in resp.json()["paused_sources"]
+
+
+def test_pause_requires_auth(admin_client):
+    client, db = admin_client
+    resp = client.post(
+        "/admin/collector/pause",
+        json={"source": "st_johns"},
+    )
+    assert resp.status_code == 401
+
+
+def test_resume_requires_auth(admin_client):
+    client, db = admin_client
+    resp = client.post(
+        "/admin/collector/resume",
+        json={"source": "st_johns"},
+    )
+    assert resp.status_code == 401
+
+
+# ── Agent health tests ───────────────────────────────────────────────
+
+
+def test_agent_health_function():
+    from where_the_plow.admin_routes import _agent_health
+
+    assert _agent_health(0) == "healthy"
+    assert _agent_health(4) == "healthy"
+    assert _agent_health(5) == "degraded"
+    assert _agent_health(15) == "degraded"
+    assert _agent_health(29) == "degraded"
+    assert _agent_health(30) == "hibernating"
+    assert _agent_health(100) == "hibernating"
+
+
+def test_agents_list_includes_health(admin_client):
+    client, db = admin_client
+    # Create an agent and record some failures
+    db.create_agent("health-1", "Health Agent", "pk_test")
+    for _ in range(6):
+        db.record_agent_report("health-1", success=False)
+
+    cookies = _auth_cookies(client)
+    with patch(
+        "where_the_plow.admin_routes._get_admin_password", return_value=ADMIN_SECRET
+    ):
+        resp = client.get("/admin/agents", cookies=cookies)
+    assert resp.status_code == 200
+    agents = resp.json()
+    agent = [a for a in agents if a["agent_id"] == "health-1"][0]
+    assert agent["consecutive_failures"] == 6
+    assert agent["health"] == "degraded"

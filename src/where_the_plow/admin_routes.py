@@ -13,6 +13,19 @@ from pydantic import BaseModel
 from where_the_plow.agent_auth import generate_keypair, agent_id_from_public_key
 from where_the_plow.db import Database
 
+HEALTH_DEGRADED_THRESHOLD = 5
+HEALTH_HIBERNATING_THRESHOLD = 30
+
+
+def _agent_health(consecutive_failures: int) -> str:
+    """Compute agent health status from consecutive failure count."""
+    if consecutive_failures >= HEALTH_HIBERNATING_THRESHOLD:
+        return "hibernating"
+    if consecutive_failures >= HEALTH_DEGRADED_THRESHOLD:
+        return "degraded"
+    return "healthy"
+
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -77,6 +90,7 @@ async def list_agents(request: Request, admin_token: str | None = Cookie(default
     agents = db.list_agents()
     result = []
     for a in agents:
+        consecutive = a.get("consecutive_failures", 0) or 0
         result.append(
             {
                 "agent_id": a["agent_id"],
@@ -94,6 +108,8 @@ async def list_agents(request: Request, admin_token: str | None = Cookie(default
                 ),
                 "total_reports": a["total_reports"],
                 "failed_reports": a["failed_reports"],
+                "consecutive_failures": consecutive,
+                "health": _agent_health(consecutive),
                 "ip": a["ip"],
                 "system_info": a["system_info"],
             }
@@ -165,8 +181,49 @@ async def admin_status(
         1 for a in agents if a["status"] == "approved" and a["last_seen_at"] is not None
     )
 
+    store = request.app.state.store
+    paused_sources = list(store.get("collector_paused", set()))
+
     return {
         "total_agents": total,
         "active_agents": active,
         "using_agents": total > 0,
+        "paused_sources": paused_sources,
     }
+
+
+class CollectorPauseRequest(BaseModel):
+    source: str
+
+
+@router.post("/collector/pause")
+async def pause_collector(
+    body: CollectorPauseRequest,
+    request: Request,
+    admin_token: str | None = Cookie(default=None),
+):
+    if not _check_auth(admin_token):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+    store = request.app.state.store
+    if "collector_paused" not in store:
+        store["collector_paused"] = set()
+    store["collector_paused"].add(body.source)
+    logger.info("Collector paused for source: %s", body.source)
+    return {"ok": True, "paused_sources": list(store["collector_paused"])}
+
+
+@router.post("/collector/resume")
+async def resume_collector(
+    body: CollectorPauseRequest,
+    request: Request,
+    admin_token: str | None = Cookie(default=None),
+):
+    if not _check_auth(admin_token):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+    store = request.app.state.store
+    paused = store.get("collector_paused", set())
+    paused.discard(body.source)
+    logger.info("Collector resumed for source: %s", body.source)
+    return {"ok": True, "paused_sources": list(paused)}

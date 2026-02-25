@@ -190,6 +190,55 @@ button:disabled {
     color: var(--color-text-bright);
 }
 
+/* ── Collector controls ───────────────────────────── */
+
+.collector-controls {
+    background: var(--color-surface);
+    border-radius: var(--border-radius);
+    padding: 4px 0;
+}
+
+.collector-source {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+}
+
+.collector-source-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.collector-source-name {
+    font-weight: 500;
+    color: var(--color-text-bright);
+    font-size: 13px;
+}
+
+.badge-paused {
+    background: rgba(247, 118, 142, 0.15);
+    color: var(--color-error);
+}
+
+/* ── Agent health badges ─────────────────────────── */
+
+.badge-health-healthy {
+    background: rgba(158, 206, 106, 0.15);
+    color: var(--color-success);
+}
+
+.badge-health-degraded {
+    background: rgba(224, 175, 104, 0.15);
+    color: var(--color-warning);
+}
+
+.badge-health-hibernating {
+    background: rgba(247, 118, 142, 0.15);
+    color: var(--color-error);
+}
+
 /* ── Agent table ──────────────────────────────────── */
 
 #agents-table-wrap {

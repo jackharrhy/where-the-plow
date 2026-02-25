@@ -40,6 +40,14 @@ def process_poll(db: Database, response, source: str, parser: str) -> int:
     return inserted
 
 
+def _is_source_paused(store: dict, source_name: str) -> bool:
+    """Return True if a source has been paused via the admin panel."""
+    paused = store.get("collector_paused")
+    if not paused:
+        return False
+    return source_name in paused
+
+
 async def poll_source(db: Database, store: dict, source_config):
     """Poll a single source in a loop at its configured interval."""
     logger.info(
@@ -49,6 +57,15 @@ async def poll_source(db: Database, store: dict, source_config):
     )
     async with httpx.AsyncClient() as client:
         while True:
+            if _is_source_paused(store, source_config.name):
+                logger.debug(
+                    "Collector for %s is paused, sleeping %ds",
+                    source_config.name,
+                    source_config.poll_interval,
+                )
+                await asyncio.sleep(source_config.poll_interval)
+                continue
+
             if source_config.parser == "avl":
                 try:
                     agents = db.list_agents()
