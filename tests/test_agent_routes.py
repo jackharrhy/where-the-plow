@@ -90,7 +90,7 @@ def test_checkin_unknown_agent(agent_client):
 def test_checkin_revoked_agent(agent_client):
     db = app.state.db
     private_pem, _, agent_id, _ = _register_agent(db)
-    db.disable_agent(agent_id)
+    db.revoke_agent(agent_id)
 
     body = b""
     headers = _sign_request(private_pem, agent_id, body)

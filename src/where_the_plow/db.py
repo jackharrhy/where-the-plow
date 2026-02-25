@@ -563,7 +563,7 @@ class Database:
             [agent_id],
         )
 
-    def disable_agent(self, agent_id: str) -> None:
+    def revoke_agent(self, agent_id: str) -> None:
         """Revoke an agent by setting status='revoked'."""
         self._cursor().execute(
             "UPDATE agents SET status = 'revoked' WHERE agent_id = ?",

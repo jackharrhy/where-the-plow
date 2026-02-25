@@ -163,7 +163,7 @@ async def revoke_agent(
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
 
     db: Database = request.app.state.db
-    db.disable_agent(agent_id)
+    db.revoke_agent(agent_id)
     return {"ok": True}
 
 

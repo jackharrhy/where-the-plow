@@ -61,9 +61,9 @@ def test_list_agents(db):
     assert agents[1]["agent_id"] == "agent-2"
 
 
-def test_disable_agent(db):
+def test_revoke_agent(db):
     db.create_agent("agent-1", "My Agent", "pk_abc123")
-    db.disable_agent("agent-1")
+    db.revoke_agent("agent-1")
     agent = db.get_agent("agent-1")
     assert agent is not None
     assert agent["status"] == "revoked"
