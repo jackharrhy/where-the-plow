@@ -1,10 +1,10 @@
 # src/where_the_plow/cache.py
-"""Simple file-based cache for coverage trail responses.
+"""Disk cache for coverage trail responses.
 
-Stores JSON in /tmp/where-the-plow-cache/ keyed by a hash of the
-(since, until) time range.  Only caches queries whose `until` is
-before today (i.e. fully historical, immutable data).  Uses LRU
-eviction by file access time when total cache size exceeds a budget.
+Stores JSON in /tmp/where-the-plow-cache/ keyed by a hash of
+(since, until, source). Each entry carries an absolute expiry time.
+Uses LRU-style eviction by file access time when total cache size
+exceeds a budget.
 """
 
 import hashlib
@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,19 +21,27 @@ logger = logging.getLogger(__name__)
 CACHE_DIR = Path(tempfile.gettempdir()) / "where-the-plow-cache"
 MAX_CACHE_BYTES = 200 * 1024 * 1024  # 200 MB
 
+# Cache policy tuned for coverage endpoint
+RECENT_TTL_SECONDS = 5 * 60  # 5 minutes for live-ish windows
+HISTORICAL_TTL_SECONDS = 24 * 60 * 60  # 1 day for immutable historical windows
 
-def _cache_key(since: datetime, until: datetime) -> str:
-    raw = f"{since.isoformat()}|{until.isoformat()}"
-    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+def _cache_key(since: datetime, until: datetime, source: str | None) -> str:
+    raw = f"{since.isoformat()}|{until.isoformat()}|{source or ''}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:24]
 
 
-def _is_cacheable(until: datetime) -> bool:
-    """Only cache if the entire window is in the past (before today UTC)."""
+def _is_historical(until: datetime) -> bool:
+    """Return True if window is fully in the past (before today UTC)."""
     today_start = datetime.now(timezone.utc).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
     until_utc = until if until.tzinfo else until.replace(tzinfo=timezone.utc)
     return until_utc < today_start
+
+
+def _ttl_for(until: datetime) -> int:
+    return HISTORICAL_TTL_SECONDS if _is_historical(until) else RECENT_TTL_SECONDS
 
 
 def _ensure_dir():
@@ -48,7 +57,6 @@ def _evict_if_needed():
         total = sum(f.stat().st_size for f in files)
         if total <= MAX_CACHE_BYTES:
             return
-        # Sort by access time, oldest first
         files.sort(key=lambda f: f.stat().st_atime)
         for f in files:
             if total <= MAX_CACHE_BYTES:
@@ -61,32 +69,48 @@ def _evict_if_needed():
         pass
 
 
-def get(since: datetime, until: datetime) -> list[dict] | None:
-    """Return cached trails or None if not cached."""
-    if not _is_cacheable(until):
-        return None
-    path = CACHE_DIR / f"{_cache_key(since, until)}.json"
+def _delete_if_expired(path: Path, expires_at: float) -> bool:
+    if time.time() <= expires_at:
+        return False
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+    return True
+
+
+def get(since: datetime, until: datetime, source: str | None = None) -> list[dict] | None:
+    """Return cached trails or None."""
+    path = CACHE_DIR / f"{_cache_key(since, until, source)}.json"
     if not path.exists():
         return None
     try:
-        # Touch access time for LRU
+        payload = json.loads(path.read_text())
+        expires_at = float(payload.get("expires_at", 0))
+        trails = payload.get("trails")
+        if not isinstance(trails, list):
+            return None
+        if _delete_if_expired(path, expires_at):
+            return None
         os.utime(path)
-        data = json.loads(path.read_text())
         logger.debug("cache hit: %s", path.name)
-        return data
-    except (OSError, json.JSONDecodeError):
+        return trails
+    except (OSError, ValueError, json.JSONDecodeError):
         return None
 
 
-def put(since: datetime, until: datetime, trails: list[dict]):
-    """Store trails in cache if the query is cacheable."""
-    if not _is_cacheable(until):
-        return
+def put(since: datetime, until: datetime, trails: list[dict], source: str | None = None):
+    """Store trails in disk cache with endpoint-specific TTL policy."""
     _ensure_dir()
     _evict_if_needed()
-    path = CACHE_DIR / f"{_cache_key(since, until)}.json"
+    path = CACHE_DIR / f"{_cache_key(since, until, source)}.json"
+    ttl = _ttl_for(until)
+    payload = {
+        "expires_at": time.time() + ttl,
+        "trails": trails,
+    }
     try:
-        path.write_text(json.dumps(trails))
-        logger.debug("cache put: %s (%d trails)", path.name, len(trails))
+        path.write_text(json.dumps(payload))
+        logger.debug("cache put: %s (%d trails, ttl=%ds)", path.name, len(trails), ttl)
     except OSError:
         pass

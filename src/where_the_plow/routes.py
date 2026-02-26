@@ -42,40 +42,6 @@ _search_limiter = RateLimiter(
 )  # 6 searches per min per IP
 
 
-# ── In-memory coverage cache for recent (non-historical) queries ──────
-
-_COVERAGE_TTL = 5 * 60  # 5 minutes — matches frontend rounding interval
-_COVERAGE_MAX = 20  # max entries before evicting oldest
-
-# key = (since_iso, until_iso, source|None)  ->  (expires_at_monotonic, trails)
-_coverage_cache: dict[tuple, tuple[float, list[dict]]] = {}
-
-
-def _coverage_cache_get(
-    since: datetime, until: datetime, source: str | None
-) -> list[dict] | None:
-    key = (since.isoformat(), until.isoformat(), source)
-    entry = _coverage_cache.get(key)
-    if entry is None:
-        return None
-    expires_at, trails = entry
-    if time.monotonic() > expires_at:
-        del _coverage_cache[key]
-        return None
-    return trails
-
-
-def _coverage_cache_put(
-    since: datetime, until: datetime, source: str | None, trails: list[dict]
-) -> None:
-    key = (since.isoformat(), until.isoformat(), source)
-    # Evict oldest if full
-    if len(_coverage_cache) >= _COVERAGE_MAX and key not in _coverage_cache:
-        oldest_key = min(_coverage_cache, key=lambda k: _coverage_cache[k][0])
-        del _coverage_cache[oldest_key]
-    _coverage_cache[key] = (time.monotonic() + _COVERAGE_TTL, trails)
-
-
 # ── Nominatim search proxy with in-memory cache ──────
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
@@ -368,21 +334,13 @@ def get_coverage(
     if until is None:
         until = now
 
-    # 1. In-memory cache (short TTL, works for recent/live queries)
-    trails = _coverage_cache_get(since, until, source)
+    # Disk cache for all windows/sources (short TTL for recent, longer for historical)
+    trails = cache.get(since, until, source=source)
     if trails is None:
-        # 2. File cache (historical queries only, no source filter)
-        if source is None:
-            trails = cache.get(since, until)
-        if trails is None:
-            trails = db.get_coverage_trails(
-                since=since, until=until, **({"source": source} if source else {})
-            )
-            # Populate file cache for historical queries
-            if source is None:
-                cache.put(since, until, trails)
-        # Populate in-memory cache for all queries
-        _coverage_cache_put(since, until, source, trails)
+        trails = db.get_coverage_trails(
+            since=since, until=until, **({"source": source} if source else {})
+        )
+        cache.put(since, until, trails, source=source)
 
     features = [
         CoverageFeature(
