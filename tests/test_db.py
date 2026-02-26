@@ -1037,6 +1037,115 @@ def test_get_latest_positions_with_source_filter():
     os.unlink(path)
 
 
+def test_get_coverage_trails_bbox_filter():
+    """Bbox filter should only return positions within the bounding box."""
+    db, path = make_db()
+    now = datetime.now(timezone.utc)
+    ts1 = datetime(2026, 2, 19, 12, 0, 0, tzinfo=timezone.utc)
+    ts2 = datetime(2026, 2, 19, 12, 0, 30, tzinfo=timezone.utc)
+    ts3 = datetime(2026, 2, 19, 12, 1, 0, tzinfo=timezone.utc)
+
+    db.upsert_vehicles(
+        [
+            {
+                "vehicle_id": "v1",
+                "description": "Plow 1",
+                "vehicle_type": "SA PLOW TRUCK",
+            },
+            {"vehicle_id": "v2", "description": "Plow 2", "vehicle_type": "LOADER"},
+        ],
+        now,
+    )
+    # v1 in downtown area (-52.73, 47.56) to (-52.75, 47.58)
+    # v2 far away at (-53.00, 47.30)
+    db.insert_positions(
+        [
+            {
+                "vehicle_id": "v1",
+                "timestamp": ts1,
+                "longitude": -52.73,
+                "latitude": 47.56,
+                "bearing": 0,
+                "speed": 10.0,
+                "is_driving": "maybe",
+            },
+            {
+                "vehicle_id": "v1",
+                "timestamp": ts2,
+                "longitude": -52.74,
+                "latitude": 47.57,
+                "bearing": 90,
+                "speed": 15.0,
+                "is_driving": "maybe",
+            },
+            {
+                "vehicle_id": "v1",
+                "timestamp": ts3,
+                "longitude": -52.75,
+                "latitude": 47.58,
+                "bearing": 180,
+                "speed": 20.0,
+                "is_driving": "maybe",
+            },
+            {
+                "vehicle_id": "v2",
+                "timestamp": ts1,
+                "longitude": -53.00,
+                "latitude": 47.30,
+                "bearing": 0,
+                "speed": 5.0,
+                "is_driving": "maybe",
+            },
+            {
+                "vehicle_id": "v2",
+                "timestamp": ts2,
+                "longitude": -53.01,
+                "latitude": 47.31,
+                "bearing": 0,
+                "speed": 5.0,
+                "is_driving": "maybe",
+            },
+            {
+                "vehicle_id": "v2",
+                "timestamp": ts3,
+                "longitude": -53.02,
+                "latitude": 47.32,
+                "bearing": 0,
+                "speed": 5.0,
+                "is_driving": "maybe",
+            },
+        ],
+        now,
+    )
+
+    # Bbox around downtown — should include v1, exclude v2
+    trails = db.get_coverage_trails(
+        since=ts1, until=ts3, bbox=(-52.80, 47.50, -52.70, 47.60)
+    )
+    assert len(trails) == 1
+    assert trails[0]["vehicle_id"] == "v1"
+
+    # Bbox around v2's area — should include v2, exclude v1
+    trails = db.get_coverage_trails(
+        since=ts1, until=ts3, bbox=(-53.10, 47.25, -52.95, 47.35)
+    )
+    assert len(trails) == 1
+    assert trails[0]["vehicle_id"] == "v2"
+
+    # Bbox that includes neither
+    trails = db.get_coverage_trails(
+        since=ts1, until=ts3, bbox=(-50.00, 48.00, -49.00, 49.00)
+    )
+    assert len(trails) == 0
+
+    # No bbox — returns both vehicles
+    trails = db.get_coverage_trails(since=ts1, until=ts3)
+    assert len(trails) == 2
+
+    db.close()
+    os.unlink(path)
+
+
 def test_get_latest_positions_with_trails_no_gap():
     """When all positions are within the gap threshold, the full trail is returned."""
     db, path = make_db()

@@ -278,6 +278,7 @@ class Database:
         since: datetime,
         until: datetime,
         source: str | None = None,
+        bbox: tuple[float, float, float, float] | None = None,
     ) -> list[dict]:
         """Get per-vehicle LineString trails in a time range.
 
@@ -290,6 +291,11 @@ class Database:
         if source is not None:
             source_filter = f"AND p.source = ${len(params) + 1}"
             params.append(source)
+        bbox_filter = ""
+        if bbox is not None:
+            west, south, east, north = bbox
+            bbox_filter = f"AND ST_Intersects(p.geom, ST_MakeEnvelope(${len(params) + 1}, ${len(params) + 2}, ${len(params) + 3}, ${len(params) + 4}))"
+            params.extend([west, south, east, north])
         query = f"""
             WITH with_gap AS (
                 SELECT
@@ -308,6 +314,7 @@ class Database:
                 WHERE p.timestamp >= $1
                 AND p.timestamp <= $2
                 {source_filter}
+                {bbox_filter}
             ),
             with_segment AS (
                 SELECT *,
