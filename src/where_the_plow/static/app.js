@@ -1078,6 +1078,14 @@ class PlowApp {
       animFrame: null,
       lastRenderTime: 0,
     };
+
+    // Recording
+    this.recording = {
+      active: false,
+      cancelled: false,
+      output: null,
+      videoSource: null,
+    };
   }
 
   /* ── Sources ─────────────────────────────────────── */
@@ -1899,6 +1907,151 @@ class PlowApp {
 
     return `${window.location.origin}/?${params.toString()}`;
   }
+
+  /* ── Recording ──────────────────────────────────── */
+
+  async startRecording() {
+    if (!window.Mediabunny) {
+      alert('Mediabunny not loaded yet. Please wait a moment and try again.');
+      return;
+    }
+    if (!this.coverageData || !this.deckTrips) {
+      alert('Load a preview first before recording.');
+      return;
+    }
+
+    const { Output, Mp4OutputFormat, BufferTarget, CanvasSource } = window.Mediabunny;
+
+    const mapCanvas = this.map.map.getCanvas();
+    const width = mapCanvas.width;
+    const height = mapCanvas.height;
+
+    // Create compositing canvas
+    const composite = document.createElement('canvas');
+    composite.width = width;
+    composite.height = height;
+    const ctx = composite.getContext('2d');
+
+    const videoSource = new CanvasSource(composite, {
+      codec: 'avc',
+      bitrate: 4_000_000,
+    });
+
+    const output = new Output({
+      format: new Mp4OutputFormat(),
+      target: new BufferTarget(),
+    });
+    output.addVideoTrack(videoSource, { frameRate: 30 });
+
+    this.recording = { active: true, cancelled: false, output, videoSource };
+
+    // UI
+    const progressEl = document.getElementById('export-progress');
+    const progressFill = document.getElementById('export-progress-fill');
+    const progressText = document.getElementById('export-progress-text');
+    const actionsEl = document.getElementById('export-actions');
+    progressEl.style.display = 'flex';
+    actionsEl.style.display = 'none';
+    this.lockPlaybackUI();
+
+    await output.start();
+
+    const fps = 30;
+    const durationSec = parseInt(document.getElementById('export-speed').value);
+    const totalFrames = fps * durationSec;
+    const sinceMs = this.coverageSince.getTime();
+    const untilMs = this.coverageUntil.getTime();
+    const rangeMs = untilMs - sinceMs;
+
+    try {
+      for (let i = 0; i < totalFrames; i++) {
+        if (this.recording.cancelled) break;
+
+        const progress = i / totalFrames;
+        const currentTimeMs = sinceMs + progress * rangeMs;
+
+        // Update slider to match
+        const sliderVal = progress * 1000;
+        timeSliderEl.noUiSlider.set([0, sliderVal]);
+
+        // Render coverage at this time
+        this.renderCoverage(0, sliderVal);
+
+        // Wait a frame for WebGL to paint
+        await new Promise(r => requestAnimationFrame(r));
+        // Additional wait for deck.gl async rendering
+        await new Promise(r => setTimeout(r, 50));
+
+        // Composite: map + overlay
+        ctx.drawImage(mapCanvas, 0, 0);
+        this._drawRecordingOverlay(ctx, width, height, new Date(currentTimeMs));
+
+        // Feed frame to encoder
+        const timestamp = i / fps;
+        const duration = 1 / fps;
+        videoSource.add(timestamp, duration);
+
+        // Update progress
+        const pct = Math.round(progress * 100);
+        progressFill.style.width = pct + '%';
+        progressText.textContent = `Encoding: ${pct}%`;
+      }
+
+      if (!this.recording.cancelled) {
+        await output.finalize();
+
+        // Download
+        const blob = new Blob([output.target.buffer], { type: 'video/mp4' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'plow-coverage.mp4';
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        await output.cancel();
+      }
+    } catch (err) {
+      console.error('Recording failed:', err);
+      try { await output.cancel(); } catch (_) {}
+      alert('Recording failed: ' + err.message);
+    }
+
+    // Restore UI
+    this.recording.active = false;
+    progressEl.style.display = 'none';
+    actionsEl.style.display = 'flex';
+    this.unlockPlaybackUI();
+  }
+
+  cancelRecording() {
+    this.recording.cancelled = true;
+  }
+
+  _drawRecordingOverlay(ctx, width, height, time) {
+    const fontSize = Math.max(14, Math.round(height / 40));
+    ctx.font = `${fontSize}px sans-serif`;
+    ctx.textBaseline = 'bottom';
+
+    // Timestamp — bottom left
+    const timeStr = time.toLocaleString(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+    ctx.shadowColor = 'rgba(0,0,0,0.8)';
+    ctx.shadowBlur = 4;
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'left';
+    ctx.fillText(timeStr, 12, height - 12);
+
+    // Branding — bottom right
+    ctx.textAlign = 'right';
+    ctx.fillText('plow.jackharrhy.dev', width - 12, height - 12);
+
+    // Reset shadow
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+  }
 }
 
 /* ── App init & event wiring ───────────────────────── */
@@ -2046,6 +2199,14 @@ document.getElementById('btn-export-link').addEventListener('click', () => {
     btn.textContent = 'Copied!';
     setTimeout(() => { btn.textContent = 'Copy Link'; }, 2000);
   });
+});
+
+// Export recording
+document.getElementById('btn-export-record').addEventListener('click', () => {
+  app.startRecording();
+});
+document.getElementById('btn-export-cancel').addEventListener('click', () => {
+  app.cancelRecording();
 });
 
 // Detail close
