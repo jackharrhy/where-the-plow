@@ -1931,11 +1931,13 @@ class PlowApp {
     const mapCanvas = this.map.map.getCanvas();
     const width = mapCanvas.width;
     const height = mapCanvas.height;
+    const FOOTER_H = 80;
+    const compositeHeight = height + FOOTER_H;
 
-    // Create compositing canvas
+    // Create compositing canvas (map + footer)
     const composite = document.createElement('canvas');
     composite.width = width;
-    composite.height = height;
+    composite.height = compositeHeight;
     const ctx = composite.getContext('2d', { willReadFrequently: true });
 
     const videoSource = new CanvasSource(composite, {
@@ -1965,45 +1967,102 @@ class PlowApp {
     await output.start();
 
     const fps = 30;
-    const durationSec = parseInt(document.getElementById('export-speed').value);
-    const totalFrames = fps * durationSec;
     const sinceMs = this.coverageSince.getTime();
     const untilMs = this.coverageUntil.getTime();
-    const rangeMs = untilMs - sinceMs;
+    const totalRangeMs = untilMs - sinceMs;
+
+    // Fetch activity segments for this region + time range
+    const segResp = await fetch(
+      `/coverage/segments?since=${this.coverageSince.toISOString()}&until=${this.coverageUntil.toISOString()}&bbox=${this._exportBbox}`
+    );
+    const segData = await segResp.json();
+
+    // Compute video time allocation per segment
+    const GAP_SPEED = 100;
+    const GAP_CAP_SEC = 5;
+    const durationSec = parseInt(document.getElementById('export-speed').value);
+
+    let rawSegments = segData.segments.map(seg => {
+      const startMs = new Date(seg.start).getTime();
+      const endMs = new Date(seg.end).getTime();
+      const realDurationMs = endMs - startMs;
+      let videoSec;
+      if (seg.type === 'gap') {
+        videoSec = Math.min(realDurationMs / 1000 / GAP_SPEED, GAP_CAP_SEC);
+      } else {
+        videoSec = realDurationMs; // placeholder, will normalize below
+      }
+      return { ...seg, startMs, endMs, realDurationMs, videoSec };
+    });
+
+    // Normalize: fit into user-chosen total duration
+    const totalGapVideoSec = rawSegments
+      .filter(s => s.type === 'gap')
+      .reduce((sum, s) => sum + s.videoSec, 0);
+    const activeRealMs = rawSegments
+      .filter(s => s.type === 'active')
+      .reduce((sum, s) => sum + s.realDurationMs, 0);
+    const activeVideoBudget = Math.max(1, durationSec - totalGapVideoSec);
+
+    rawSegments = rawSegments.map(seg => {
+      if (seg.type === 'active' && activeRealMs > 0) {
+        seg.videoSec = activeVideoBudget * (seg.realDurationMs / activeRealMs);
+      }
+      seg.frameCount = Math.max(1, Math.round(seg.videoSec * fps));
+      return seg;
+    });
+
+    const totalFrames = rawSegments.reduce((sum, s) => sum + s.frameCount, 0);
 
     try {
-      for (let i = 0; i < totalFrames; i++) {
+      let globalFrame = 0;
+      for (const seg of rawSegments) {
         if (this.recording.cancelled) break;
 
-        const progress = i / totalFrames;
-        const currentTimeMs = sinceMs + progress * rangeMs;
+        for (let f = 0; f < seg.frameCount; f++) {
+          if (this.recording.cancelled) break;
 
-        // Update slider to match
-        const sliderVal = progress * 1000;
-        timeSliderEl.noUiSlider.set([0, sliderVal]);
+          const segProgress = f / seg.frameCount;
+          const currentTimeMs = seg.startMs + segProgress * seg.realDurationMs;
 
-        // Render coverage at this time
-        this.renderCoverage(0, sliderVal);
+          // Map the time to slider value (0-1000)
+          const sliderVal = ((currentTimeMs - sinceMs) / totalRangeMs) * 1000;
 
-        // Force MapLibre to render and wait for the frame to actually paint
-        this.map.map.triggerRepaint();
-        await new Promise(r => this.map.map.once('render', r));
-        // Extra rAF to ensure the WebGL draw commands are flushed
-        await new Promise(r => requestAnimationFrame(r));
+          // During gaps, clear trails; during active, show coverage
+          if (seg.type === 'gap') {
+            this.map.setDeckLayers([]);
+          } else {
+            timeSliderEl.noUiSlider.set([0, sliderVal]);
+            this.renderCoverage(0, sliderVal);
+          }
 
-        // Composite: map + overlay
-        ctx.drawImage(mapCanvas, 0, 0);
-        this._drawRecordingOverlay(ctx, width, height, new Date(currentTimeMs));
+          // Wait for MapLibre render
+          this.map.map.triggerRepaint();
+          await new Promise(r => this.map.map.once('render', r));
+          await new Promise(r => requestAnimationFrame(r));
 
-        // Feed frame to encoder
-        const timestamp = i / fps;
-        const duration = 1 / fps;
-        await videoSource.add(timestamp, duration);
+          // Composite: map + footer
+          ctx.drawImage(mapCanvas, 0, 0);
+          this._drawVideoFooter(ctx, width, compositeHeight, {
+            currentTimeMs,
+            segments: rawSegments,
+            sinceMs,
+            untilMs,
+            segment: seg,
+            segProgress,
+          });
 
-        // Update progress
-        const pct = Math.round(progress * 100);
-        progressFill.style.width = pct + '%';
-        progressText.textContent = `Encoding: ${pct}%`;
+          // Feed frame
+          const timestamp = globalFrame / fps;
+          const duration = 1 / fps;
+          await videoSource.add(timestamp, duration);
+
+          // Progress
+          const pct = Math.round((globalFrame / totalFrames) * 100);
+          progressFill.style.width = pct + '%';
+          progressText.textContent = `Encoding: ${pct}%`;
+          globalFrame++;
+        }
       }
 
       if (!this.recording.cancelled) {
@@ -2039,29 +2098,109 @@ class PlowApp {
     this.recording.cancelled = true;
   }
 
-  _drawRecordingOverlay(ctx, width, height, time) {
-    const fontSize = Math.max(14, Math.round(height / 40));
+  _drawVideoFooter(ctx, width, compositeHeight, state) {
+    const { currentTimeMs, segments, sinceMs, untilMs, segment, segProgress } = state;
+    const FOOTER_H = 80;
+    const footerY = compositeHeight - FOOTER_H;
+    const totalRangeMs = untilMs - sinceMs;
+
+    // Footer background
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(0, footerY, width, FOOTER_H);
+
+    // Border line at top of footer
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, footerY);
+    ctx.lineTo(width, footerY);
+    ctx.stroke();
+
+    const pad = 12;
+    const fontSize = Math.max(12, Math.round(FOOTER_H / 6));
+
+    // Row 1: timestamp (left), status (center), elapsed (right)
     ctx.font = `${fontSize}px sans-serif`;
-    ctx.textBaseline = 'bottom';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#e2e8f0';
 
-    // Timestamp — bottom left
+    const time = new Date(currentTimeMs);
     const timeStr = time.toLocaleString(undefined, {
-      year: 'numeric', month: 'short', day: 'numeric',
-      hour: '2-digit', minute: '2-digit',
+      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
     });
-    ctx.shadowColor = 'rgba(0,0,0,0.8)';
-    ctx.shadowBlur = 4;
-    ctx.fillStyle = '#fff';
     ctx.textAlign = 'left';
-    ctx.fillText(timeStr, 12, height - 12);
+    ctx.fillText(timeStr, pad, footerY + 6);
 
-    // Branding — bottom right
+    // Status indicator
+    const isActive = segment.type === 'active';
+    const dotColor = isActive ? '#4ade80' : '#6b7280';
+    const statusText = isActive
+      ? 'Plow active'
+      : `No plow \u2014 ${this._formatDuration(segment.realDurationMs)}`;
+
+    const statusX = width / 2;
+    ctx.textAlign = 'center';
+    // Draw dot
+    ctx.fillStyle = dotColor;
+    ctx.beginPath();
+    const dotY = footerY + 6 + fontSize / 2;
+    const dotR = fontSize / 3;
+    const textMetrics = ctx.measureText(statusText);
+    const dotOffsetX = statusX - textMetrics.width / 2 - dotR - 6;
+    ctx.arc(dotOffsetX, dotY, dotR, 0, Math.PI * 2);
+    ctx.fill();
+    // Status text
+    ctx.fillStyle = isActive ? '#4ade80' : '#9ca3af';
+    ctx.fillText(statusText, statusX, footerY + 6);
+
+    // Session elapsed (right side)
+    if (isActive) {
+      const elapsed = currentTimeMs - segment.startMs;
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#e2e8f0';
+      ctx.fillText(this._formatDuration(elapsed) + ' so far', width - pad, footerY + 6);
+    }
+
+    // Row 2: Timeline bar
+    const barY = footerY + 6 + fontSize + 6;
+    const barH = 10;
+    const barX = pad;
+    const barW = width - 2 * pad;
+
+    // Draw segment colors
+    for (const seg of segments) {
+      const x0 = barX + ((seg.startMs - sinceMs) / totalRangeMs) * barW;
+      const x1 = barX + ((seg.endMs - sinceMs) / totalRangeMs) * barW;
+      ctx.fillStyle = seg.type === 'active' ? '#4ade80' : '#374151';
+      ctx.fillRect(x0, barY, Math.max(1, x1 - x0), barH);
+    }
+
+    // Playhead
+    const playX = barX + ((currentTimeMs - sinceMs) / totalRangeMs) * barW;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(playX - 1, barY - 2, 2, barH + 4);
+
+    // Row 3: branding (left), date range (right)
+    const row3Y = barY + barH + 6;
+    ctx.font = `${Math.max(10, fontSize - 2)}px sans-serif`;
+    ctx.fillStyle = '#9ca3af';
+    ctx.textAlign = 'left';
+    ctx.fillText('plow.jackharrhy.dev', pad, row3Y);
+
     ctx.textAlign = 'right';
-    ctx.fillText('plow.jackharrhy.dev', width - 12, height - 12);
+    const sinceDate = new Date(sinceMs);
+    const untilDate = new Date(untilMs);
+    const rangeStr = sinceDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+      + ' \u2013 ' + untilDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    ctx.fillText(rangeStr, width - pad, row3Y);
+  }
 
-    // Reset shadow
-    ctx.shadowColor = 'transparent';
-    ctx.shadowBlur = 0;
+  _formatDuration(ms) {
+    const totalMin = Math.floor(ms / 60000);
+    const hours = Math.floor(totalMin / 60);
+    const mins = totalMin % 60;
+    if (hours > 0) return `${hours}h ${mins}m`;
+    return `${mins}m`;
   }
 }
 
