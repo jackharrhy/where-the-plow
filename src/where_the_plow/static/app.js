@@ -1936,7 +1936,7 @@ class PlowApp {
     const composite = document.createElement('canvas');
     composite.width = width;
     composite.height = height;
-    const ctx = composite.getContext('2d');
+    const ctx = composite.getContext('2d', { willReadFrequently: true });
 
     const videoSource = new CanvasSource(composite, {
       codec: 'avc',
@@ -1985,10 +1985,11 @@ class PlowApp {
         // Render coverage at this time
         this.renderCoverage(0, sliderVal);
 
-        // Wait a frame for WebGL to paint
+        // Force MapLibre to render and wait for the frame to actually paint
+        this.map.map.triggerRepaint();
+        await new Promise(r => this.map.map.once('render', r));
+        // Extra rAF to ensure the WebGL draw commands are flushed
         await new Promise(r => requestAnimationFrame(r));
-        // Additional wait for deck.gl async rendering
-        await new Promise(r => setTimeout(r, 50));
 
         // Composite: map + overlay
         ctx.drawImage(mapCanvas, 0, 0);
