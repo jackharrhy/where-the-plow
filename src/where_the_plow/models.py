@@ -93,6 +93,17 @@ class CoverageFeatureCollection(BaseModel):
     features: list[CoverageFeature]
 
 
+class ActivitySegment(BaseModel):
+    start: str = Field(..., description="ISO 8601 start time")
+    end: str = Field(..., description="ISO 8601 end time")
+    type: str = Field(..., description="'active' or 'gap'")
+
+
+class ActivitySegmentsResponse(BaseModel):
+    segments: list[ActivitySegment]
+    gap_threshold_minutes: int
+
+
 class ViewportTrack(BaseModel):
     zoom: float = Field(..., description="Current map zoom level")
     center: list[float] = Field(

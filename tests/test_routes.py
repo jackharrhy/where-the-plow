@@ -387,6 +387,36 @@ def test_get_coverage_with_invalid_bbox(test_client):
     assert resp.status_code == 422
 
 
+def test_get_coverage_segments(test_client):
+    """Segments endpoint returns activity/gap segments."""
+    client = test_client
+    resp = client.get(
+        "/coverage/segments",
+        params={
+            "since": "2026-02-19T11:00:00Z",
+            "until": "2026-02-19T13:00:00Z",
+            "bbox": "-52.80,47.50,-52.70,47.60",
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "segments" in data
+    assert "gap_threshold_minutes" in data
+    types = [s["type"] for s in data["segments"]]
+    assert "active" in types
+    assert "gap" in types
+
+
+def test_get_coverage_segments_requires_bbox(test_client):
+    """Segments endpoint requires bbox parameter."""
+    client = test_client
+    resp = client.get(
+        "/coverage/segments",
+        params={"since": "2026-02-19T11:00:00Z", "until": "2026-02-19T13:00:00Z"},
+    )
+    assert resp.status_code == 422
+
+
 def test_openapi_spec(test_client):
     resp = test_client.get("/openapi.json")
     assert resp.status_code == 200

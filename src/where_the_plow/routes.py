@@ -6,7 +6,7 @@ from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 
 import httpx
-from fastapi import APIRouter, Query, Request, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 
 from where_the_plow import cache
@@ -120,6 +120,8 @@ def _client_ip(request: Request) -> str:
 
 
 from where_the_plow.models import (
+    ActivitySegment,
+    ActivitySegmentsResponse,
     CoverageFeature,
     CoverageFeatureCollection,
     CoverageProperties,
@@ -426,6 +428,58 @@ def get_coverage(
         for t in trails
     ]
     return CoverageFeatureCollection(features=features)
+
+
+@router.get(
+    "/coverage/segments",
+    response_model=ActivitySegmentsResponse,
+    summary="Activity segments",
+    description="Detect plow activity sessions and gaps within a bounding box.",
+    tags=["coverage"],
+)
+def get_coverage_segments(
+    request: Request,
+    since: datetime | None = Query(
+        None, description="Start of time range (ISO 8601). Default: 24 hours ago."
+    ),
+    until: datetime | None = Query(
+        None, description="End of time range (ISO 8601). Default: now."
+    ),
+    bbox: str = Query(..., description="Required bounding box: west,south,east,north"),
+    gap_threshold: int = Query(
+        15, description="Gap threshold in minutes", ge=1, le=120
+    ),
+):
+    if since is None:
+        since = datetime.now(timezone.utc) - timedelta(hours=24)
+    if until is None:
+        until = datetime.now(timezone.utc)
+
+    parts = bbox.split(",")
+    if len(parts) != 4:
+        raise HTTPException(
+            status_code=422,
+            detail="bbox must have 4 comma-separated values: west,south,east,north",
+        )
+    try:
+        bbox_tuple = tuple(float(p) for p in parts)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="bbox values must be numbers")
+
+    west, south, east, north = bbox_tuple
+    if west >= east or south >= north:
+        raise HTTPException(
+            status_code=422, detail="bbox must have west < east and south < north"
+        )
+
+    db = request.app.state.db
+    segments = db.get_activity_segments(
+        since, until, bbox_tuple, gap_threshold_minutes=gap_threshold
+    )
+    return ActivitySegmentsResponse(
+        segments=[ActivitySegment(**s) for s in segments],
+        gap_threshold_minutes=gap_threshold,
+    )
 
 
 @router.get(
