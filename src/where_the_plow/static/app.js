@@ -1997,7 +1997,7 @@ class PlowApp {
         // Feed frame to encoder
         const timestamp = i / fps;
         const duration = 1 / fps;
-        videoSource.add(timestamp, duration);
+        await videoSource.add(timestamp, duration);
 
         // Update progress
         const pct = Math.round(progress * 100);
@@ -2225,7 +2225,7 @@ document
 
 plowMap.on("load", async () => {
   // Initialize deck.gl overlay for coverage rendering
-  plowMap.deckOverlay = new deck.MapboxOverlay({ layers: [] });
+  plowMap.deckOverlay = new deck.MapboxOverlay({ interleaved: true, layers: [] });
   plowMap.map.addControl(plowMap.deckOverlay);
 
   // Listen for Mapbox Draw events
