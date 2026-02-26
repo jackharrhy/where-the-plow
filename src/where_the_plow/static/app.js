@@ -699,6 +699,7 @@ const plowMap = new PlowMap("map", {
   style: "https://tiles.openfreemap.org/styles/liberty",
   center: savedView ? savedView.center : [-52.71, 47.56],
   zoom: savedView ? savedView.zoom : 12,
+  preserveDrawingBuffer: true,
 });
 
 const geolocate = new maplibregl.GeolocateControl({
@@ -1065,7 +1066,7 @@ class PlowApp {
 
     // Export
     this.exportMode = false;
-    this.exportPolygon = null;
+    this._exportBbox = null;
 
     // Playback
     this.playback = {
@@ -1846,7 +1847,6 @@ class PlowApp {
     document.getElementById('export-panel').style.display = 'none';
     document.getElementById('btn-export-mode').textContent = 'Export Region';
     document.getElementById('export-unsupported').style.display = 'none';
-    this.exportPolygon = null;
   }
 
   async previewExport() {
@@ -2184,9 +2184,6 @@ document.getElementById('btn-export-mode').addEventListener('click', () => {
 document.getElementById('btn-draw-polygon').addEventListener('click', () => {
   if (app.map.draw) app.map.draw.changeMode('draw_polygon');
 });
-document.getElementById('btn-draw-rectangle').addEventListener('click', () => {
-  if (app.map.draw) app.map.draw.changeMode('draw_polygon');
-});
 document.getElementById('btn-draw-clear').addEventListener('click', () => {
   app.map.clearDraw();
   app.updateExportButtons();
@@ -2303,9 +2300,12 @@ plowMap.on("load", async () => {
       await app.loadCoverageForRange(since, until);
 
       // Draw polygon outline if provided
-      if (replayParams.polygon) {
+      if (replayParams.polygon && replayParams.polygon.length < 10000) {
         try {
           const coords = JSON.parse(replayParams.polygon);
+          if (!Array.isArray(coords) || !coords.every(c => Array.isArray(c) && c.length >= 2)) {
+            throw new Error('Invalid polygon coordinates');
+          }
           plowMap.map.addSource('replay-polygon', {
             type: 'geojson',
             data: {

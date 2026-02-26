@@ -382,6 +382,8 @@ def get_coverage(
             parts = [float(x) for x in bbox.split(",")]
             if len(parts) != 4:
                 raise ValueError
+            if parts[0] >= parts[2] or parts[1] >= parts[3]:
+                raise ValueError
             bbox_tuple = tuple(parts)
         except ValueError:
             return JSONResponse(
