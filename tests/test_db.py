@@ -1,7 +1,7 @@
 # tests/test_db.py
 import os
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from where_the_plow.db import Database
 
@@ -1155,8 +1155,6 @@ def test_get_latest_positions_with_trails_no_gap():
         [{"vehicle_id": "v1", "description": "Plow 1", "vehicle_type": "LOADER"}], now
     )
     # 4 positions all 30s apart (well within 120s threshold)
-    from datetime import timedelta
-
     base = datetime(2026, 2, 19, 12, 0, 0, tzinfo=timezone.utc)
     positions = [
         {
@@ -1179,3 +1177,106 @@ def test_get_latest_positions_with_trails_no_gap():
 
     db.close()
     os.unlink(path)
+
+
+def test_get_activity_segments():
+    db, path = make_db()
+    try:
+        now = datetime(2026, 2, 19, 12, 0, 0, tzinfo=timezone.utc)
+        db.upsert_vehicles(
+            [
+                {
+                    "vehicle_id": "v1",
+                    "description": "Plow 1",
+                    "vehicle_type": "SA PLOW TRUCK",
+                },
+            ],
+            now,
+        )
+        # Session 1: 3 positions at 30s intervals starting at now
+        # Gap: 20 minutes (> 15min threshold)
+        # Session 2: 2 positions at 30s intervals starting at now+20min
+        positions = [
+            {
+                "vehicle_id": "v1",
+                "timestamp": now,
+                "longitude": -52.73,
+                "latitude": 47.56,
+                "bearing": 0,
+                "speed": 10.0,
+                "is_driving": "maybe",
+            },
+            {
+                "vehicle_id": "v1",
+                "timestamp": now + timedelta(seconds=30),
+                "longitude": -52.74,
+                "latitude": 47.57,
+                "bearing": 0,
+                "speed": 10.0,
+                "is_driving": "maybe",
+            },
+            {
+                "vehicle_id": "v1",
+                "timestamp": now + timedelta(seconds=60),
+                "longitude": -52.75,
+                "latitude": 47.58,
+                "bearing": 0,
+                "speed": 10.0,
+                "is_driving": "maybe",
+            },
+            # 20 minute gap
+            {
+                "vehicle_id": "v1",
+                "timestamp": now + timedelta(minutes=20),
+                "longitude": -52.73,
+                "latitude": 47.56,
+                "bearing": 0,
+                "speed": 10.0,
+                "is_driving": "maybe",
+            },
+            {
+                "vehicle_id": "v1",
+                "timestamp": now + timedelta(minutes=20, seconds=30),
+                "longitude": -52.74,
+                "latitude": 47.57,
+                "bearing": 0,
+                "speed": 10.0,
+                "is_driving": "maybe",
+            },
+        ]
+        db.insert_positions(positions, now)
+
+        since = now - timedelta(minutes=5)
+        until = now + timedelta(minutes=25)
+        bbox = (-52.80, 47.50, -52.70, 47.60)
+
+        segments = db.get_activity_segments(
+            since, until, bbox, gap_threshold_minutes=15
+        )
+
+        # Expect: leading gap, session 1, gap, session 2, trailing gap
+        assert len(segments) == 5
+        assert segments[0]["type"] == "gap"  # since → first position
+        assert segments[1]["type"] == "active"  # session 1
+        assert segments[2]["type"] == "gap"  # between sessions
+        assert segments[3]["type"] == "active"  # session 2
+        assert segments[4]["type"] == "gap"  # last position → until
+
+        # Active segments should have correct boundaries
+        assert segments[1]["start"] == now.isoformat()
+        assert segments[1]["end"] == (now + timedelta(seconds=60)).isoformat()
+        assert segments[3]["start"] == (now + timedelta(minutes=20)).isoformat()
+        assert (
+            segments[3]["end"] == (now + timedelta(minutes=20, seconds=30)).isoformat()
+        )
+
+        # No activity → single gap segment covering entire range
+        far_bbox = (-50.0, 48.0, -49.0, 49.0)
+        segments_empty = db.get_activity_segments(
+            since, until, far_bbox, gap_threshold_minutes=15
+        )
+        assert len(segments_empty) == 1
+        assert segments_empty[0]["type"] == "gap"
+    finally:
+        db.close()
+        os.unlink(path)

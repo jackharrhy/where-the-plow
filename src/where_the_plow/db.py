@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 import duckdb
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from itertools import groupby
 
 
@@ -359,6 +359,102 @@ class Database:
             )
 
         return trails
+
+    def get_activity_segments(
+        self,
+        since: datetime,
+        until: datetime,
+        bbox: tuple[float, float, float, float],
+        gap_threshold_minutes: int = 15,
+    ) -> list[dict]:
+        """Return active/gap segments for positions within bbox and time range.
+
+        Walks through timestamps sorted chronologically; any gap larger than
+        gap_threshold_minutes starts a new segment.  Leading and trailing
+        gaps (since→first position, last position→until) are included.
+        If no positions match, returns a single gap spanning the full range.
+        """
+        west, south, east, north = bbox
+        params: list = [since, until, west, south, east, north]
+        query = """
+            SELECT DISTINCT timestamp
+            FROM positions
+            WHERE timestamp >= $1
+              AND timestamp <= $2
+              AND ST_Intersects(geom, ST_MakeEnvelope($3, $4, $5, $6))
+            ORDER BY timestamp
+        """
+        rows = self._cursor().execute(query, params).fetchall()
+        timestamps: list[datetime] = [r[0].astimezone(timezone.utc) for r in rows]
+
+        if not timestamps:
+            return [
+                {
+                    "start": since.isoformat(),
+                    "end": until.isoformat(),
+                    "type": "gap",
+                }
+            ]
+
+        gap_threshold = timedelta(minutes=gap_threshold_minutes)
+        segments: list[dict] = []
+
+        # Leading gap: since → first position
+        if timestamps[0] > since:
+            segments.append(
+                {
+                    "start": since.isoformat(),
+                    "end": timestamps[0].isoformat(),
+                    "type": "gap",
+                }
+            )
+
+        # Walk through timestamps, splitting on gaps
+        seg_start = timestamps[0]
+        seg_end = timestamps[0]
+
+        for i in range(1, len(timestamps)):
+            gap = timestamps[i] - timestamps[i - 1]
+            if gap > gap_threshold:
+                # Close current active segment
+                segments.append(
+                    {
+                        "start": seg_start.isoformat(),
+                        "end": seg_end.isoformat(),
+                        "type": "active",
+                    }
+                )
+                # Insert gap segment
+                segments.append(
+                    {
+                        "start": seg_end.isoformat(),
+                        "end": timestamps[i].isoformat(),
+                        "type": "gap",
+                    }
+                )
+                seg_start = timestamps[i]
+            seg_end = timestamps[i]
+
+        # Close final active segment
+        segments.append(
+            {
+                "start": seg_start.isoformat(),
+                "end": seg_end.isoformat(),
+                "type": "active",
+            }
+        )
+
+        # Trailing gap: last position → until
+        if timestamps[-1] < until:
+            segments.append(
+                {
+                    "start": timestamps[-1].isoformat(),
+                    "end": until.isoformat(),
+                    "type": "gap",
+                }
+            )
+
+        return segments
 
     def _row_to_dict(self, row) -> dict:
         return {
