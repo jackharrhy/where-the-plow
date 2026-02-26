@@ -630,6 +630,42 @@ class PlowMap {
     this.coverageAbort = new AbortController();
     return this.coverageAbort.signal;
   }
+
+  /* ── Draw (Mapbox Draw) ────────────────────────── */
+
+  initDraw() {
+    this.draw = new MapboxDraw({
+      displayControlsDefault: false,
+      controls: {},
+      defaultMode: 'simple_select',
+    });
+    this.map.addControl(this.draw, 'top-left');
+  }
+
+  getDrawnPolygon() {
+    if (!this.draw) return null;
+    const data = this.draw.getAll();
+    if (!data || data.features.length === 0) return null;
+    return data.features[0];
+  }
+
+  clearDraw() {
+    if (this.draw) this.draw.deleteAll();
+  }
+
+  getDrawnBbox() {
+    const feature = this.getDrawnPolygon();
+    if (!feature) return null;
+    const coords = feature.geometry.coordinates[0];
+    let west = Infinity, south = Infinity, east = -Infinity, north = -Infinity;
+    for (const [lng, lat] of coords) {
+      if (lng < west) west = lng;
+      if (lng > east) east = lng;
+      if (lat < south) south = lat;
+      if (lat > north) north = lat;
+    }
+    return [west, south, east, north];
+  }
 }
 
 /* ── Map view persistence ──────────────────────────── */
@@ -1010,6 +1046,10 @@ class PlowApp {
     this.coverageUntil = null;
     this.coveragePreset = "24";
     this.coverageView = "lines";
+
+    // Export
+    this.exportMode = false;
+    this.exportPolygon = null;
 
     // Playback
     this.playback = {
@@ -1408,6 +1448,8 @@ class PlowApp {
     document.getElementById("vehicle-count").style.display = "";
     document.getElementById("db-size").style.display = "none";
     vehicleHint.style.display = "";
+    document.getElementById('btn-export-mode').style.display = 'none';
+    if (this.exportMode) this.exitExportMode();
     showLegend("vehicles");
     this.startAutoRefresh();
   }
@@ -1425,6 +1467,7 @@ class PlowApp {
     document.getElementById("db-size").style.display = "";
     vehicleHint.style.display = "none";
     coveragePanelEl.style.display = "block";
+    document.getElementById('btn-export-mode').style.display = 'block';
     btnPlay.disabled = true;
 
     this.coveragePreset = "24";
@@ -1731,6 +1774,65 @@ class PlowApp {
       { type: "FeatureCollection", features: buildTrailSegments(features) },
     );
   }
+
+  /* ── Export mode ────────────────────────────────── */
+
+  enterExportMode() {
+    this.exportMode = true;
+    this.map.initDraw();
+    document.getElementById('export-panel').style.display = 'block';
+    document.getElementById('btn-export-mode').textContent = 'Exit Export';
+
+    // Set date picker bounds
+    const startInput = document.getElementById('export-date-start');
+    const endInput = document.getElementById('export-date-end');
+    if (coverageDateInput.min) startInput.min = coverageDateInput.min;
+    if (coverageDateInput.max) endInput.max = coverageDateInput.max;
+    startInput.max = coverageDateInput.max;
+    endInput.min = startInput.min;
+
+    // Default: last 3 days
+    const now = new Date();
+    const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+    endInput.value = now.toISOString().slice(0, 10);
+    startInput.value = threeDaysAgo.toISOString().slice(0, 10);
+
+    // Check WebCodecs support
+    if (typeof VideoEncoder === 'undefined') {
+      document.getElementById('export-unsupported').style.display = 'block';
+      document.getElementById('btn-export-record').disabled = true;
+    }
+
+    this.updateExportButtons();
+  }
+
+  exitExportMode() {
+    this.exportMode = false;
+    this.map.clearDraw();
+    if (this.map.draw) {
+      this.map.map.removeControl(this.map.draw);
+      this.map.draw = null;
+    }
+    document.getElementById('export-panel').style.display = 'none';
+    document.getElementById('btn-export-mode').textContent = 'Export Region';
+    document.getElementById('export-unsupported').style.display = 'none';
+    this.exportPolygon = null;
+  }
+
+  updateExportButtons() {
+    const hasPolygon = this.map.getDrawnPolygon() !== null;
+    const startDate = document.getElementById('export-date-start').value;
+    const endDate = document.getElementById('export-date-end').value;
+    const hasDates = startDate && endDate && startDate <= endDate;
+    const ready = hasPolygon && hasDates;
+
+    document.getElementById('btn-draw-clear').disabled = !hasPolygon;
+    document.getElementById('btn-export-preview').disabled = !ready;
+    document.getElementById('btn-export-link').disabled = !ready;
+
+    const hasWebCodecs = typeof VideoEncoder !== 'undefined';
+    document.getElementById('btn-export-record').disabled = !(ready && hasWebCodecs);
+  }
 }
 
 /* ── App init & event wiring ───────────────────────── */
@@ -1840,6 +1942,31 @@ playbackFollowSelect.addEventListener("change", () => {
   app.playback.followVehicleId = playbackFollowSelect.value || null;
 });
 
+// Export mode toggle
+document.getElementById('btn-export-mode').addEventListener('click', () => {
+  if (app.exportMode) {
+    app.exitExportMode();
+  } else {
+    app.enterExportMode();
+  }
+});
+
+// Draw buttons
+document.getElementById('btn-draw-polygon').addEventListener('click', () => {
+  if (app.map.draw) app.map.draw.changeMode('draw_polygon');
+});
+document.getElementById('btn-draw-rectangle').addEventListener('click', () => {
+  if (app.map.draw) app.map.draw.changeMode('draw_polygon');
+});
+document.getElementById('btn-draw-clear').addEventListener('click', () => {
+  app.map.clearDraw();
+  app.updateExportButtons();
+});
+
+// Export date inputs update button state
+document.getElementById('export-date-start').addEventListener('change', () => app.updateExportButtons());
+document.getElementById('export-date-end').addEventListener('change', () => app.updateExportButtons());
+
 // Detail close
 document
   .getElementById("detail-close")
@@ -1851,6 +1978,20 @@ plowMap.on("load", async () => {
   // Initialize deck.gl overlay for coverage rendering
   plowMap.deckOverlay = new deck.MapboxOverlay({ layers: [] });
   plowMap.map.addControl(plowMap.deckOverlay);
+
+  // Listen for Mapbox Draw events
+  plowMap.on('draw.create', () => {
+    // Only allow one polygon at a time
+    const data = plowMap.draw?.getAll();
+    if (data && data.features.length > 1) {
+      const latest = data.features[data.features.length - 1];
+      plowMap.draw.deleteAll();
+      plowMap.draw.add(latest);
+    }
+    app.updateExportButtons();
+  });
+  plowMap.on('draw.update', () => app.updateExportButtons());
+  plowMap.on('draw.delete', () => app.updateExportButtons());
 
   await app.loadSources();
 
