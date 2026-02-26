@@ -1018,6 +1018,22 @@ legendToggleBtn.addEventListener("click", () => {
   legendToggleBtn.classList.toggle("collapsed", collapsed);
 });
 
+/* ── Replay URL params ─────────────────────────────── */
+
+function parseReplayParams() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('mode') !== 'replay') return null;
+    return {
+        since: params.get('since'),
+        until: params.get('until'),
+        speed: params.get('speed') || '30',
+        center: params.get('center'),
+        zoom: params.get('zoom'),
+        bbox: params.get('bbox'),
+        polygon: params.get('polygon'),
+    };
+}
+
 /* ── PlowApp class ─────────────────────────────────── */
 
 class PlowApp {
@@ -1856,6 +1872,33 @@ class PlowApp {
     const hasWebCodecs = typeof VideoEncoder !== 'undefined';
     document.getElementById('btn-export-record').disabled = !(ready && hasWebCodecs);
   }
+
+  generateShareLink() {
+    const bbox = this.map.getDrawnBbox();
+    const startDate = document.getElementById('export-date-start').value;
+    const endDate = document.getElementById('export-date-end').value;
+    const speed = document.getElementById('export-speed').value;
+    const center = this.map.map.getCenter();
+    const zoom = this.map.map.getZoom().toFixed(2);
+
+    const params = new URLSearchParams({
+      mode: 'replay',
+      since: startDate,
+      until: endDate,
+      speed: speed,
+      center: `${center.lat.toFixed(4)},${center.lng.toFixed(4)}`,
+      zoom: zoom,
+    });
+    if (bbox) {
+      params.set('bbox', bbox.map(v => v.toFixed(6)).join(','));
+    }
+    const polygon = this.map.getDrawnPolygon();
+    if (polygon) {
+      params.set('polygon', JSON.stringify(polygon.geometry.coordinates[0]));
+    }
+
+    return `${window.location.origin}/?${params.toString()}`;
+  }
 }
 
 /* ── App init & event wiring ───────────────────────── */
@@ -1995,6 +2038,16 @@ document.getElementById('btn-export-preview').addEventListener('click', () => {
   app.previewExport();
 });
 
+// Export share link
+document.getElementById('btn-export-link').addEventListener('click', () => {
+  const url = app.generateShareLink();
+  navigator.clipboard.writeText(url).then(() => {
+    const btn = document.getElementById('btn-export-link');
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = 'Copy Link'; }, 2000);
+  });
+});
+
 // Detail close
 document
   .getElementById("detail-close")
@@ -2053,4 +2106,61 @@ plowMap.on("load", async () => {
   });
 
   app.startAutoRefresh();
+
+  // Auto-load replay mode from URL params
+  const replayParams = parseReplayParams();
+  if (replayParams) {
+    // Skip welcome modal
+    document.getElementById('welcome-overlay').style.display = 'none';
+
+    // Switch to coverage mode
+    await app.switchMode('coverage');
+
+    // Set camera
+    if (replayParams.center && replayParams.zoom) {
+      const [lat, lng] = replayParams.center.split(',').map(Number);
+      plowMap.map.jumpTo({ center: [lng, lat], zoom: parseFloat(replayParams.zoom) });
+    }
+
+    // Load coverage with bbox
+    if (replayParams.since && replayParams.until) {
+      const since = new Date(replayParams.since + 'T00:00:00');
+      const until = new Date(replayParams.until + 'T23:59:59');
+      if (replayParams.bbox) {
+        app._exportBbox = replayParams.bbox;
+      }
+      await app.loadCoverageForRange(since, until);
+
+      // Draw polygon outline if provided
+      if (replayParams.polygon) {
+        try {
+          const coords = JSON.parse(replayParams.polygon);
+          plowMap.map.addSource('replay-polygon', {
+            type: 'geojson',
+            data: {
+              type: 'Feature',
+              geometry: { type: 'Polygon', coordinates: [coords] },
+            },
+          });
+          plowMap.map.addLayer({
+            id: 'replay-polygon-outline',
+            type: 'line',
+            source: 'replay-polygon',
+            paint: {
+              'line-color': '#fff',
+              'line-width': 2,
+              'line-dasharray': [3, 2],
+              'line-opacity': 0.6,
+            },
+          });
+        } catch (e) {
+          console.warn('Failed to parse replay polygon:', e);
+        }
+      }
+
+      // Set playback speed and auto-start
+      playbackSpeedSelect.value = replayParams.speed;
+      app.startPlayback();
+    }
+  }
 });
