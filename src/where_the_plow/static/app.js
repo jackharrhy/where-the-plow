@@ -1926,6 +1926,17 @@ class PlowApp {
       return;
     }
 
+    // Ensure bbox is available — derive from drawn polygon if needed
+    if (!this._exportBbox) {
+      const bbox = this.map.getDrawnBbox();
+      if (bbox) {
+        this._exportBbox = bbox.join(',');
+      } else {
+        alert('Draw a region first before recording.');
+        return;
+      }
+    }
+
     const { Output, Mp4OutputFormat, BufferTarget, CanvasSource } = window.Mediabunny;
 
     const mapCanvas = this.map.map.getCanvas();
