@@ -21,16 +21,19 @@ class Settings(BaseSettings):
     provincial_api_url: str = (
         "https://gps5.aatracking.com/api/NewfoundlandPortal/GetPlows"
     )
+    paradise_api_url: str = "https://hitechmaps.com/townparadise/db.php"
 
     # Source enable/disable
     source_st_johns_enabled: bool = True
     source_mt_pearl_enabled: bool = True
     source_provincial_enabled: bool = True
+    source_paradise_enabled: bool = True
 
     # Source poll intervals (seconds)
     source_st_johns_poll_interval: int = 6
     source_mt_pearl_poll_interval: int = 30
     source_provincial_poll_interval: int = 30
+    source_paradise_poll_interval: int = 10
 
 
 settings = Settings()

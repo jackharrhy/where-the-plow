@@ -1,6 +1,10 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from where_the_plow.client import parse_aatracking_response, parse_avl_response
+from where_the_plow.client import (
+    parse_aatracking_response,
+    parse_avl_response,
+    parse_hitechmaps_response,
+)
 
 
 SAMPLE_RESPONSE = {
@@ -168,3 +172,112 @@ def test_parse_aatracking_missing_veh_id():
     assert len(vehicles) == 1
     assert vehicles[0]["vehicle_id"] == "100"
     assert len(positions) == 1
+
+
+# ── HitechMaps (Paradise) parser tests ───────────────────────────────
+
+SAMPLE_PARADISE_RESPONSE = [
+    {
+        "VID": "b19",
+        "Latitude": "47.5292931",
+        "longitude": "-52.8587875",
+        "Bearing": "89",
+        "IsDeviceCommunicating": "1",
+        "Engine": "0",
+        "Speed": "0",
+        "DateTime": "2026-02-26 01:04:25",
+        "Ignition": "1",
+        "DeviceName": "070",
+        "UpdateTime": "2026-02-26 01:05:39",
+        "TruckType": "Loaders",
+        "CurrentStateDuration": "00:00:01",
+    },
+    {
+        "VID": "b3C",
+        "Latitude": "47.5314178",
+        "longitude": "-52.8553162",
+        "Bearing": "244",
+        "IsDeviceCommunicating": "1",
+        "Engine": "0",
+        "Speed": "26",
+        "DateTime": "2026-02-26 01:05:26",
+        "Ignition": "1",
+        "DeviceName": "101",
+        "UpdateTime": "2026-02-26 01:05:39",
+        "TruckType": "Plows",
+        "CurrentStateDuration": "00:27:54",
+    },
+]
+
+
+def test_parse_hitechmaps_response():
+    vehicles, positions = parse_hitechmaps_response(SAMPLE_PARADISE_RESPONSE)
+    assert len(vehicles) == 2
+    assert len(positions) == 2
+
+    # First vehicle: loader, ignition on but speed 0 → not driving
+    assert vehicles[0]["vehicle_id"] == "b19"
+    assert vehicles[0]["description"] == "070"
+    assert vehicles[0]["vehicle_type"] == "LOADER"
+
+    assert positions[0]["vehicle_id"] == "b19"
+    assert positions[0]["latitude"] == 47.5292931
+    assert positions[0]["longitude"] == -52.8587875
+    assert positions[0]["bearing"] == 89
+    assert positions[0]["speed"] == 0.0
+    assert positions[0]["is_driving"] == "no"  # ignition on but speed 0
+
+    # Timestamp: 2026-02-26 01:04:25 NST (UTC-3:30)
+    nst = timezone(timedelta(hours=-3, minutes=-30))
+    assert positions[0]["timestamp"] == datetime(2026, 2, 26, 1, 4, 25, tzinfo=nst)
+
+    # Second vehicle: plow, ignition on and speed > 0 → driving
+    assert vehicles[1]["vehicle_id"] == "b3C"
+    assert vehicles[1]["vehicle_type"] == "SA PLOW TRUCK"
+
+    assert positions[1]["speed"] == 26.0
+    assert positions[1]["is_driving"] == "yes"  # ignition on and moving
+
+
+def test_parse_hitechmaps_empty():
+    vehicles, positions = parse_hitechmaps_response([])
+    assert vehicles == []
+    assert positions == []
+
+
+def test_parse_hitechmaps_missing_fields():
+    """Items with missing optional fields should still parse with defaults."""
+    data = [
+        {
+            "VID": "b99",
+            "Latitude": "47.5",
+            "longitude": "-52.8",
+        }
+    ]
+    vehicles, positions = parse_hitechmaps_response(data)
+    assert len(vehicles) == 1
+    assert vehicles[0]["vehicle_id"] == "b99"
+    assert vehicles[0]["vehicle_type"] == "Unknown"
+    assert positions[0]["bearing"] == 0
+    assert positions[0]["speed"] == 0.0
+    assert positions[0]["is_driving"] == "no"
+
+
+def test_parse_hitechmaps_bad_item_skipped():
+    """Completely malformed items should be skipped, not crash."""
+    data = [
+        "not a dict",
+        {
+            "VID": "b42",
+            "Latitude": "47.5",
+            "longitude": "-52.8",
+            "Speed": "15",
+            "Ignition": "1",
+            "TruckType": "Plows",
+            "DeviceName": "042",
+        },
+    ]
+    vehicles, positions = parse_hitechmaps_response(data)
+    assert len(vehicles) == 1
+    assert vehicles[0]["vehicle_id"] == "b42"
+    assert positions[0]["is_driving"] == "yes"

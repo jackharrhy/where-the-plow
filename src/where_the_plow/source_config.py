@@ -56,4 +56,15 @@ def build_sources(settings) -> dict[str, SourceConfig]:
             enabled=settings.source_provincial_enabled,
             min_coverage_zoom=0,
         ),
+        "paradise": SourceConfig(
+            name="paradise",
+            display_name="Paradise",
+            api_url=settings.paradise_api_url,
+            poll_interval=settings.source_paradise_poll_interval,
+            center=(-52.87, 47.52),
+            zoom=13,
+            parser="hitechmaps",
+            enabled=settings.source_paradise_enabled,
+            min_coverage_zoom=10,
+        ),
     }

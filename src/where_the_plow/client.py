@@ -90,6 +90,83 @@ class AATrackingItem(BaseModel):
             return 0
 
 
+# ── HitechMaps (Paradise) response models ────────────────────────────
+
+# Map TruckType to normalized vehicle types matching St. John's AVL.
+_HITECHMAPS_TYPE_MAP = {
+    "Plows": "SA PLOW TRUCK",
+    "Loaders": "LOADER",
+}
+
+
+class HitechMapsItem(BaseModel):
+    VID: str
+    Latitude: str = "0"
+    longitude: str = "0"  # Note: lowercase 'l' — their API is inconsistent
+    Bearing: str = "0"
+    Speed: str = "0"
+    DateTime: str = ""
+    Ignition: str = "0"
+    DeviceName: str = ""
+    TruckType: str = ""
+
+    @property
+    def lat(self) -> float:
+        try:
+            return float(self.Latitude)
+        except (ValueError, TypeError):
+            return 0.0
+
+    @property
+    def lng(self) -> float:
+        try:
+            return float(self.longitude)
+        except (ValueError, TypeError):
+            return 0.0
+
+    @property
+    def speed_float(self) -> float:
+        try:
+            return float(self.Speed)
+        except (ValueError, TypeError):
+            return 0.0
+
+    @property
+    def bearing_int(self) -> int:
+        try:
+            v = int(self.Bearing)
+            return v if v >= 0 else 0
+        except (ValueError, TypeError):
+            return 0
+
+    @property
+    def vehicle_type(self) -> str:
+        return _HITECHMAPS_TYPE_MAP.get(self.TruckType, self.TruckType or "Unknown")
+
+    @property
+    def is_driving(self) -> str:
+        """Ignition on AND moving → 'yes', otherwise 'no'."""
+        try:
+            ignition_on = self.Ignition == "1"
+            moving = float(self.Speed) > 0
+        except (ValueError, TypeError):
+            return "no"
+        return "yes" if ignition_on and moving else "no"
+
+    @property
+    def parsed_datetime(self) -> datetime | None:
+        """Parse the DateTime field (space-separated, no timezone)."""
+        if not self.DateTime:
+            return None
+        try:
+            dt = datetime.strptime(self.DateTime, "%Y-%m-%d %H:%M:%S")
+            # Assume Newfoundland Standard Time (UTC-3:30)
+            nst = timezone(timedelta(hours=-3, minutes=-30))
+            return dt.replace(tzinfo=nst)
+        except ValueError:
+            return None
+
+
 # ── Parsers ──────────────────────────────────────────────────────────
 
 
@@ -167,6 +244,46 @@ def parse_aatracking_response(
                 "bearing": item.bearing,
                 "speed": None,
                 "is_driving": None,
+            }
+        )
+
+    return vehicles, positions
+
+
+def parse_hitechmaps_response(
+    data: list, collected_at: datetime | None = None
+) -> tuple[list[dict], list[dict]]:
+    """Parse HitechMaps response (Paradise).
+
+    Items that fail validation are silently skipped.
+    """
+    vehicles = []
+    positions = []
+    for raw_item in data:
+        try:
+            item = HitechMapsItem.model_validate(raw_item)
+        except Exception:
+            continue
+
+        ts = item.parsed_datetime or collected_at or datetime.now(timezone.utc)
+
+        vehicles.append(
+            {
+                "vehicle_id": item.VID,
+                "description": item.DeviceName,
+                "vehicle_type": item.vehicle_type,
+            }
+        )
+
+        positions.append(
+            {
+                "vehicle_id": item.VID,
+                "timestamp": ts,
+                "longitude": item.lng,
+                "latitude": item.lat,
+                "bearing": item.bearing_int,
+                "speed": item.speed_float,
+                "is_driving": item.is_driving,
             }
         )
 

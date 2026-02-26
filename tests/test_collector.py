@@ -40,6 +40,24 @@ SAMPLE_AATRACKING_RESPONSE = [
     }
 ]
 
+SAMPLE_HITECHMAPS_RESPONSE = [
+    {
+        "VID": "b3C",
+        "Latitude": "47.5314178",
+        "longitude": "-52.8553162",
+        "Bearing": "244",
+        "IsDeviceCommunicating": "1",
+        "Engine": "0",
+        "Speed": "26",
+        "DateTime": "2026-02-26 01:05:26",
+        "Ignition": "1",
+        "DeviceName": "101",
+        "UpdateTime": "2026-02-26 01:05:39",
+        "TruckType": "Plows",
+        "CurrentStateDuration": "00:27:54",
+    }
+]
+
 
 def make_db():
     fd, path = tempfile.mkstemp(suffix=".db")
@@ -72,6 +90,20 @@ def test_process_poll_aatracking():
         "SELECT source FROM positions WHERE vehicle_id='17186'"
     ).fetchone()
     assert row[0] == "mt_pearl"
+    db.close()
+    os.unlink(path)
+
+
+def test_process_poll_hitechmaps():
+    db, path = make_db()
+    inserted = process_poll(
+        db, SAMPLE_HITECHMAPS_RESPONSE, source="paradise", parser="hitechmaps"
+    )
+    assert inserted == 1
+    row = db.conn.execute(
+        "SELECT source FROM positions WHERE vehicle_id='b3C'"
+    ).fetchone()
+    assert row[0] == "paradise"
     db.close()
     os.unlink(path)
 

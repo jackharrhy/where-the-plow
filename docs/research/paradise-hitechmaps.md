@@ -1,6 +1,6 @@
 # Paradise HitechMaps API
 
-**Status:** API confirmed reachable, returns empty data (seasonal)
+**Status:** Implemented — parser: `hitechmaps`, source: `paradise`
 **GitHub issue:** #15
 **Tracker URL:** https://hitechmaps.com/townparadise/
 **API type:** PHP backend, simple JSON REST
@@ -20,50 +20,65 @@ The frontend fetches with `{cache: "no-cache"}`.
 Returns a JSON array of vehicle objects. When no plows are active, returns
 an empty array `[]`.
 
-**Expected shape** (from JavaScript source analysis -- no live sample
-available as of Feb 2026):
+**Confirmed shape** (from live API data, Feb 2026):
 
 ```json
 [
   {
-    "VID": "12345",
-    "Latitude": 47.5235,
-    "longitude": -52.8693,
-    "Speed": 35,
-    "Bearing": 180,
-    "IsDeviceCommunicating": 1,
-    "Ignition": 1,
-    "DeviceName": "Plow Truck 1",
-    "TruckType": "Loaders",
-    "CurrentStateDuration": "00:15:30",
-    "DateTime": "2026-02-23T02:47:04"
+    "VID": "b3C",
+    "Latitude": "47.5314178",
+    "longitude": "-52.8553162",
+    "Bearing": "244",
+    "IsDeviceCommunicating": "1",
+    "Engine": "0",
+    "Speed": "26",
+    "DateTime": "2026-02-26 01:05:26",
+    "Ignition": "1",
+    "DeviceName": "101",
+    "UpdateTime": "2026-02-26 01:05:39",
+    "TruckType": "Plows",
+    "CurrentStateDuration": "00:27:54"
   }
 ]
 ```
+
+**Important differences from original JS source analysis:**
+- All values are **strings**, not native numbers/booleans
+- `DateTime` uses space separator (`"2026-02-26 01:05:26"`), not ISO 8601 with T
+- `Engine` field exists (undocumented in original analysis)
+- `UpdateTime` field exists — server-side refresh timestamp, same for all vehicles
+- `Bearing` of `"0"` for stationary (not `-1` as originally expected)
+- `TruckType` values observed: `"Plows"`, `"Loaders"`
 
 ### Field Details
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `VID` | string/number | Unique vehicle identifier |
-| `Latitude` | float | **Capital L** -- latitude (WGS84) |
-| `longitude` | float | **Lowercase l** -- longitude (WGS84). Note the inconsistent casing! |
-| `Speed` | number | Current speed; 0 = stationary |
-| `Bearing` | number | Direction in degrees; **-1 = unknown/unavailable** |
-| `IsDeviceCommunicating` | 0 or 1 | Whether the GPS device is online |
-| `Ignition` | 0 or 1 | Whether the vehicle ignition is on |
-| `DeviceName` | string | Human-readable vehicle name |
-| `TruckType` | string | Vehicle type; empty string = unknown, "Loaders" = loader |
-| `CurrentStateDuration` | string | How long in current state (format unclear, likely HH:MM:SS) |
-| `DateTime` | string | Timestamp of the latest GPS update |
+| `VID` | string | Unique vehicle identifier (hex-like: `"b19"`, `"b3C"`) |
+| `Latitude` | string | **Capital L** -- latitude as string (WGS84) |
+| `longitude` | string | **Lowercase l** -- longitude as string (WGS84). Inconsistent casing! |
+| `Speed` | string | Current speed as string; `"0"` = stationary |
+| `Bearing` | string | Direction in degrees as string; `"0"` for unknown/stationary |
+| `IsDeviceCommunicating` | string | `"0"` or `"1"` -- whether the GPS device is online |
+| `Engine` | string | `"0"` or `"1"` -- engine status |
+| `Ignition` | string | `"0"` or `"1"` -- whether the vehicle ignition is on |
+| `DeviceName` | string | Human-readable vehicle name (numeric IDs like `"070"`, `"101"`) |
+| `TruckType` | string | Vehicle type: `"Plows"`, `"Loaders"`, or empty |
+| `CurrentStateDuration` | string | How long in current state (`HH:MM:SS` or `D.HH:MM:SS`) |
+| `DateTime` | string | GPS update timestamp (`"YYYY-MM-DD HH:MM:SS"`, space-separated, NST) |
+| `UpdateTime` | string | Server refresh timestamp, same across all vehicles in a response |
 
 ### Key Quirks
 
 1. **Inconsistent field casing**: `Latitude` (capital L) vs `longitude`
    (lowercase l). This is a bug in their API, not a convention.
-2. **Bearing of -1**: When bearing is unknown, the API returns -1 instead
-   of null. Their frontend uses the previous known bearing as fallback.
-3. **Empty when inactive**: Unlike St. John's which always shows vehicles,
+2. **All values are strings**: Unlike most JSON APIs, even numeric fields
+   like `Speed`, `Bearing`, and coordinates are returned as strings.
+3. **Bearing of 0 for unknown**: Stationary vehicles show `"0"`, not `-1`
+   as originally expected from JS source analysis.
+4. **Server-side refresh interval**: `UpdateTime` changes every ~20-30
+   seconds, regardless of the frontend's 5-second poll interval.
+5. **Empty when inactive**: Unlike St. John's which always shows vehicles,
    Paradise only returns data when plows are actively operating.
 
 ## Frontend Behavior (from source analysis)
@@ -83,10 +98,11 @@ available as of Feb 2026):
 ## Polling Characteristics
 
 - Their frontend polls every **5 seconds**
-- Recommended poll interval: **10-15 seconds** (compromise between
-  freshness and being a good neighbor)
+- Server-side data refreshes every **~20-30 seconds** (observed from
+  `UpdateTime` field changes)
+- Configured poll interval: **10 seconds** (catches every server refresh)
 - No authentication required
-- Vehicle count: **Unknown** (API returns empty during research period)
+- Vehicle count: **17 observed** (mix of Plows and Loaders, Feb 2026)
 - Coverage: Town of Paradise municipal boundaries
 
 ## Availability Concerns
@@ -107,7 +123,7 @@ this gracefully (log and continue, don't treat empty as an error).
 | `longitude` | `longitude` | Direct (note: lowercase l) |
 | `bearing` | `Bearing` | Direct, but map -1 to `None` |
 | `speed` | `Speed` | Direct (float) |
-| `is_driving` | Derived | Derive from `Ignition` + `Speed`: if `Ignition == 1 and Speed > 0` -> "maybe", else "no" |
+| `is_driving` | Derived | `Ignition == "1" and Speed > 0` -> `"yes"`, else `"no"` |
 
 ### Additional Fields Available (not in common schema)
 
@@ -117,15 +133,17 @@ this gracefully (log and continue, don't treat empty as an error).
 | `Ignition` | Used to derive is_driving |
 | `CurrentStateDuration` | Could be shown in vehicle details popup |
 
-## Implementation Priority
+## Implementation
 
-**Low priority** for initial multi-source implementation because:
-1. Returns empty data most of the time
-2. Can't verify the parser against live data
-3. Different platform from the other sources (can't share parser code)
+**Implemented** as source `paradise` with parser `hitechmaps`.
 
-Recommended to implement the parser but disable the source by default
-until it can be tested during an active storm.
+Files changed:
+- `src/where_the_plow/client.py` — `HitechMapsItem` model + `parse_hitechmaps_response()`
+- `src/where_the_plow/source_config.py` — `paradise` entry in `build_sources()`
+- `src/where_the_plow/config.py` — `paradise_api_url`, `source_paradise_enabled`, `source_paradise_poll_interval`
+- `src/where_the_plow/collector.py` — `hitechmaps` parser dispatch
+- `tests/test_client.py` — parser tests with live data samples
+- `tests/test_collector.py` — `process_poll` integration test
 
 ## Map Center
 

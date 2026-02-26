@@ -8,8 +8,10 @@ def test_default_settings():
     assert s.source_st_johns_poll_interval == 6
     assert s.source_mt_pearl_poll_interval == 30
     assert s.source_provincial_poll_interval == 30
+    assert s.source_paradise_poll_interval == 10
     assert s.log_level == "INFO"
     assert "MapServer" in s.avl_api_url
+    assert "hitechmaps.com" in s.paradise_api_url
 
 
 def test_settings_from_env(monkeypatch):
@@ -46,6 +48,7 @@ def test_sources_registry_has_required_sources():
     assert "st_johns" in SOURCES
     assert "mt_pearl" in SOURCES
     assert "provincial" in SOURCES
+    assert "paradise" in SOURCES
 
 
 def test_source_config_has_required_fields():
@@ -56,7 +59,7 @@ def test_source_config_has_required_fields():
         assert src.poll_interval > 0
         assert len(src.center) == 2
         assert src.zoom > 0
-        assert src.parser in ("avl", "aatracking")
+        assert src.parser in ("avl", "aatracking", "hitechmaps")
         assert src.min_coverage_zoom >= 0
 
 
@@ -79,6 +82,7 @@ def test_source_min_coverage_zoom():
     assert SOURCES["st_johns"].min_coverage_zoom == 10
     assert SOURCES["mt_pearl"].min_coverage_zoom == 10
     assert SOURCES["provincial"].min_coverage_zoom == 0
+    assert SOURCES["paradise"].min_coverage_zoom == 10
 
 
 def test_build_sources_respects_disabled(monkeypatch):

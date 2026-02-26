@@ -1,5 +1,13 @@
-<!-- changelog-id: 12 -->
+<!-- changelog-id: 13 -->
 # Changelog
+
+## 2026-02-26 - Paradise Plows Added
+The Town of Paradise snowplow fleet is now tracked alongside St. John's, Mount
+Pearl, and the Provincial fleet. Paradise runs on a different tracking platform
+(HitechMaps), so this is a new data source rather than an extension of the
+existing ones. Toggle it on and off from the legend like any other source.
+
+[View changes](https://github.com/jackharrhy/where-the-plow/compare/56df668...PLACEHOLDER)
 
 ## 2026-02-25 — Agent System Removed, Direct AVL Access Restored!
 Someone lovely from the City of reached out and explained what had
