@@ -1493,10 +1493,11 @@ class PlowApp {
     timeSliderEl.noUiSlider.set([0, 1000]);
     this.map.clearCoverage();
     try {
-      const resp = await fetch(
-        `/coverage?since=${since.toISOString()}&until=${until.toISOString()}`,
-        { signal },
-      );
+      let url = `/coverage?since=${since.toISOString()}&until=${until.toISOString()}`;
+      if (this._exportBbox) {
+        url += `&bbox=${this._exportBbox}`;
+      }
+      const resp = await fetch(url, { signal });
       this.coverageData = await resp.json();
       // Pre-parse timestamp strings to epoch ms (once, not per frame)
       const baseTime = since.getTime();
@@ -1808,6 +1809,7 @@ class PlowApp {
 
   exitExportMode() {
     this.exportMode = false;
+    this._exportBbox = null;
     this.map.clearDraw();
     if (this.map.draw) {
       this.map.map.removeControl(this.map.draw);
@@ -1817,6 +1819,27 @@ class PlowApp {
     document.getElementById('btn-export-mode').textContent = 'Export Region';
     document.getElementById('export-unsupported').style.display = 'none';
     this.exportPolygon = null;
+  }
+
+  async previewExport() {
+    const bbox = this.map.getDrawnBbox();
+    if (!bbox) return;
+    const startDate = document.getElementById('export-date-start').value;
+    const endDate = document.getElementById('export-date-end').value;
+    if (!startDate || !endDate) return;
+
+    const since = new Date(startDate + 'T00:00:00');
+    const until = new Date(endDate + 'T23:59:59');
+    const bboxParam = bbox.join(',');
+
+    // Store bbox for the fetch
+    this._exportBbox = bboxParam;
+
+    await this.loadCoverageForRange(since, until);
+
+    // Fit map to drawn region
+    const [west, south, east, north] = bbox;
+    this.map.map.fitBounds([[west, south], [east, north]], { padding: 50 });
   }
 
   updateExportButtons() {
@@ -1966,6 +1989,11 @@ document.getElementById('btn-draw-clear').addEventListener('click', () => {
 // Export date inputs update button state
 document.getElementById('export-date-start').addEventListener('change', () => app.updateExportButtons());
 document.getElementById('export-date-end').addEventListener('change', () => app.updateExportButtons());
+
+// Export preview
+document.getElementById('btn-export-preview').addEventListener('click', () => {
+  app.previewExport();
+});
 
 // Detail close
 document
