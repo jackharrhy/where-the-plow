@@ -57,6 +57,7 @@ All geo endpoints return GeoJSON. Full OpenAPI docs at [`/docs`](https://plow.ja
 | `GET /vehicles/nearby?lat=&lng=&radius=` | Vehicles within radius (meters) |
 | `GET /vehicles/{id}/history?since=&until=` | Position history for one vehicle |
 | `GET /coverage?since=&until=&bbox=` | Per-vehicle LineString trails with timestamps |
+| `GET /coverage/segments?since=&until=&bbox=&gap_threshold=` | Activity/gap time segments for a region |
 | `GET /search?q=` | Geocode an address via Nominatim (cached proxy) |
 | `GET /stats` | Collection statistics |
 | `GET /health` | Health check |
