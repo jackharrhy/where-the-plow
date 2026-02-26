@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from where_the_plow.client import (
     parse_aatracking_response,
     parse_avl_response,
+    parse_geotab_response,
     parse_hitechmaps_response,
 )
 
@@ -281,3 +282,56 @@ def test_parse_hitechmaps_bad_item_skipped():
     assert len(vehicles) == 1
     assert vehicles[0]["vehicle_id"] == "b42"
     assert positions[0]["is_driving"] == "yes"
+
+
+# ── Geotab Citizen Insights (CBS) parser tests ──────────────────────
+
+SAMPLE_CBS_RESPONSE = {
+    "b21": [-52.9353294, 47.5177231],
+    "bBB": [-52.9379311, 47.5386467],
+    "b42": [-52.9595337, 47.5173874],
+}
+
+
+def test_parse_geotab_response():
+    collected_at = datetime(2026, 2, 26, 1, 0, 0, tzinfo=timezone.utc)
+    vehicles, positions = parse_geotab_response(SAMPLE_CBS_RESPONSE, collected_at)
+    assert len(vehicles) == 3
+    assert len(positions) == 3
+
+    # Check first vehicle
+    ids = {v["vehicle_id"] for v in vehicles}
+    assert ids == {"b21", "bBB", "b42"}
+
+    # All should be SA PLOW TRUCK (only plow data in this source)
+    for v in vehicles:
+        assert v["vehicle_type"] == "SA PLOW TRUCK"
+        assert v["description"] == v["vehicle_id"]
+
+    # Check coordinates for b21
+    b21_pos = next(p for p in positions if p["vehicle_id"] == "b21")
+    assert b21_pos["longitude"] == -52.9353294
+    assert b21_pos["latitude"] == 47.5177231
+    assert b21_pos["timestamp"] == collected_at
+    assert b21_pos["bearing"] == 0
+    assert b21_pos["speed"] is None
+    assert b21_pos["is_driving"] is None
+
+
+def test_parse_geotab_empty():
+    vehicles, positions = parse_geotab_response({})
+    assert vehicles == []
+    assert positions == []
+
+
+def test_parse_geotab_bad_coords_skipped():
+    """Entries with invalid coordinates should be silently skipped."""
+    data = {
+        "good": [-52.9, 47.5],
+        "bad_list": [None, None],
+        "short": [-52.9],
+        "not_list": "garbage",
+    }
+    vehicles, positions = parse_geotab_response(data)
+    assert len(vehicles) == 1
+    assert vehicles[0]["vehicle_id"] == "good"

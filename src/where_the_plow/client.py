@@ -167,6 +167,57 @@ class HitechMapsItem(BaseModel):
             return None
 
 
+# ── Geotab Citizen Insights (CBS) response handling ──────────────────
+
+# The Geotab Citizen Insights API returns a minimal format:
+#   {"vehicleId": [lng, lat], ...}
+# No timestamps, speed, bearing, or vehicle names are provided.
+
+
+def parse_geotab_response(
+    data: dict, collected_at: datetime | None = None
+) -> tuple[list[dict], list[dict]]:
+    """Parse Geotab Citizen Insights vehicle-locations response (CBS).
+
+    The data is a flat dict mapping vehicle IDs to [lng, lat] arrays.
+    No metadata is available — timestamps use collected_at, and speed/bearing
+    are unknown.
+    """
+    now = collected_at or datetime.now(timezone.utc)
+    vehicles = []
+    positions = []
+    for vehicle_id, coords in data.items():
+        if not isinstance(coords, list) or len(coords) < 2:
+            continue
+        try:
+            lng = float(coords[0])
+            lat = float(coords[1])
+        except (ValueError, TypeError):
+            continue
+
+        vehicles.append(
+            {
+                "vehicle_id": vehicle_id,
+                "description": vehicle_id,
+                "vehicle_type": "SA PLOW TRUCK",
+            }
+        )
+
+        positions.append(
+            {
+                "vehicle_id": vehicle_id,
+                "timestamp": now,
+                "longitude": lng,
+                "latitude": lat,
+                "bearing": 0,
+                "speed": None,
+                "is_driving": None,
+            }
+        )
+
+    return vehicles, positions
+
+
 # ── Parsers ──────────────────────────────────────────────────────────
 
 
@@ -305,6 +356,16 @@ async def fetch_source(client: httpx.AsyncClient, source) -> dict | list:
         }
         if source.referer:
             headers["Referer"] = source.referer
+
+    if source.parser == "geotab":
+        # Two-step fetch: get signed URL, then fetch data from GCS bucket
+        resp = await client.get(source.api_url, timeout=10)
+        resp.raise_for_status()
+        signed_url = resp.json()["url"]
+
+        resp = await client.get(signed_url, timeout=10)
+        resp.raise_for_status()
+        return resp.json()
 
     resp = await client.get(source.api_url, params=params, headers=headers, timeout=10)
     resp.raise_for_status()

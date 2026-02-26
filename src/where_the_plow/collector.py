@@ -9,6 +9,7 @@ from where_the_plow.client import (
     parse_avl_response,
     parse_aatracking_response,
     parse_hitechmaps_response,
+    parse_geotab_response,
 )
 from where_the_plow.config import SOURCES
 from where_the_plow.db import Database
@@ -26,6 +27,8 @@ def process_poll(db: Database, response, source: str, parser: str) -> int:
         vehicles, positions = parse_aatracking_response(response, collected_at=now)
     elif parser == "hitechmaps":
         vehicles, positions = parse_hitechmaps_response(response, collected_at=now)
+    elif parser == "geotab":
+        vehicles, positions = parse_geotab_response(response, collected_at=now)
     else:
         raise ValueError(f"Unknown parser: {parser}")
 

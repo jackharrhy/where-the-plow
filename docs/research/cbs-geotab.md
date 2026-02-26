@@ -1,127 +1,182 @@
 # CBS Geotab Citizen Insights
 
-**Status:** Not yet reverse-engineered -- proprietary SPA
+**Status:** Implemented -- parser: `geotab`, source: `cbs`
 **GitHub issue:** #16
 **Tracker URL:** https://citizeninsights.geotab.com/#/equipment-tracker-cbs
-**API type:** Unknown (proprietary Geotab platform)
+**API type:** Two-step signed URL (Geotab -> GCS bucket)
 **Platform:** Geotab Citizen Insights
 
-## What We Know
+## API Flow
 
-CBS (Conception Bay South) uses Geotab's "Citizen Insights" platform, a
-proprietary SPA (Single Page Application) for municipal equipment tracking.
+The Geotab Citizen Insights platform uses a two-step fetch:
 
-### Web Application Structure
-
-- **Frontend:** Minified JavaScript SPA (`/dist/main.js`)
-- **Frameworks found in bundle:** Mithril.js, RxJS, Redux, Mapbox GL JS,
-  DayJS, Lodash, DOMPurify, Turf.js
-- **Map:** Mapbox GL JS (v1.12.0)
-- **Analytics:** Google Tag Manager
-
-### URLs Found in Bundle
-
-| URL | Purpose |
-|-----|---------|
-| `https://analyticslab.geotab.com/` | Production API base (likely) |
-| `https://analyticslab-staging.geotab.com/` | Staging API |
-| `https://analyticslabtest.geotab.com/` | Test API |
-| `https://citizeninsights.geotab.com` | Frontend origin |
-
-### Storage
-
-- Assets stored in Google Cloud Storage bucket:
-  `geotab-citizen-insights-{environment}/`
-- Environment is determined at runtime via `isProduction()` check
-
-### Security Headers
-
-The CSP (Content-Security-Policy) header restricts connections to:
-- `self`
-- `storage.googleapis.com`
-- `*.google-analytics.com`
-- `*.googletagmanager.com`
-- `api.mapbox.com`
-- `events.mapbox.com`
-
-Notably, `analyticslab.geotab.com` is NOT in the connect-src CSP, which
-suggests the API calls may go through the citizeninsights.geotab.com
-origin (proxied) or the CSP may be incomplete.
-
-## What We Don't Know
-
-1. **API endpoint structure** -- the minified bundle obscures the API paths.
-   Only `/api/.` was found via regex, suggesting dynamic URL construction.
-2. **Authentication** -- unclear if the API requires tokens, cookies, or
-   is open
-3. **Data shape** -- no sample response available
-4. **Rate limits** -- unknown
-5. **Whether "cbs" is a route parameter or a configuration** -- the hash
-   URL `#/equipment-tracker-cbs` suggests it's a client-side route, and
-   "cbs" may be passed as a parameter to the API
-
-## Reverse Engineering Approaches (for future agents)
-
-### Approach 1: Browser DevTools (Recommended)
-
-The most reliable approach is to open the tracker in a browser with DevTools
-Network tab and observe the actual API requests:
-
-1. Navigate to `https://citizeninsights.geotab.com/#/equipment-tracker-cbs`
-2. Open DevTools > Network tab
-3. Filter by XHR/Fetch requests
-4. Observe the requests made on load and during polling
-5. Document: URL, method, headers, request body, response shape
-
-### Approach 2: Deeper Bundle Analysis
-
-The minified bundle at `/dist/main.js` is ~1.5MB. More thorough analysis
-could reveal:
-
-1. Search for `equipment-tracker` in the bundle to find the component
-2. Search for `axios` or `fetch` patterns near that code
-3. Look for URL template strings with "cbs" as a parameter
-4. The bundle uses axios for HTTP -- search for axios interceptors for
-   auth header patterns
-
-### Approach 3: Try Known Patterns
-
-Based on the Geotab Analytics Lab platform, try:
+### Step 1: Get deployment config (one-time)
 
 ```
-GET https://analyticslab.geotab.com/api/equipment-tracker/cbs
-GET https://citizeninsights.geotab.com/api/equipment-tracker/cbs
-GET https://analyticslab.geotab.com/api/v1/equipment/cbs
+GET https://citizeninsights.geotab.com/config/equipment-tracker-cbs
 ```
 
-### Approach 4: Geotab SDK / Public API
+Returns the full deployment configuration including service categories,
+map center/zoom, and the `cacheLocation` ("Canada") used to construct
+bucket file paths.
 
-Geotab has a public SDK (https://geotab.github.io/sdk/) with a MyGeotab
-API. CBS may be using a standard Geotab fleet tracking setup. The Citizen
-Insights platform might be a thin layer over the standard Geotab API.
+### Step 2: Get signed URL for bucket file
 
-## Implementation Priority
+```
+GET https://citizeninsights.geotab.com/urlForFileFromBucket/{cacheLocation}/{filename}
+```
 
-**Lowest priority** for multi-source implementation because:
-1. Proprietary platform with no obvious public API
-2. Requires manual browser-based reverse engineering
-3. Other sources (Mt Pearl, Provincial) have known working APIs
-4. CBS is a smaller municipality -- lower impact
+Returns `{"url": "<signed GCS URL>"}`. The signed URL has:
+- `X-Goog-Expires=1800` (30 minutes)
+- `X-Goog-Algorithm=GOOG4-RSA-SHA256`
+- Credential: `gcebigdatp21-account@geotab-citizeninsights-prod`
 
-## Map Center (estimated)
+### Step 3: Fetch data from signed URL
 
-- Center: approximately (-52.95, 47.50)
+The signed URL points to a JSON file in a Google Cloud Storage bucket:
+`geotab-citizen-insights-prod-bucket-canada/`
+
+## File Naming Convention
+
+Files in the bucket follow this pattern:
+
+```
+equipment-tracker-{publicURL}-{serviceCategoryId}-{serviceGroupId}-{dataType}.json
+```
+
+For CBS snow plows:
+```
+equipment-tracker-cbs-lp038h1u-b27A7-vehicle-locations.json
+                  ^^^ ^^^^^^^^ ^^^^^
+                  slug category group
+```
+
+### Service Categories (from config)
+
+| Category ID | Group ID | Type | Icon | Availability |
+|-------------|----------|------|------|--------------|
+| `lp038h1u` | `b27A7` | Snow plows | ice-road | Oct-Mar (Range) |
+| `lr84dhvu` | `b27A9` | Waste trucks | bin | Year-round |
+| `lr84fate` | `b27AE` | Recycling | ecology-leaf | Year-round |
+
+Only snow plows (`lp038h1u`/`b27A7`) are implemented. The other
+categories could be added later if desired.
+
+### Available Files Per Category
+
+| Suffix | Exists | Content |
+|--------|--------|---------|
+| `vehicle-locations.json` | Yes | Vehicle positions |
+| `routes.json` | Yes | GeoJSON FeatureCollection (often empty) |
+| `trip-trails.json` | Yes | Historical trail data with metadata |
+| `settings.json` | No | NoSuchKey error |
+| `config.json` | No | NoSuchKey error |
+
+## Vehicle Locations Response Shape
+
+```json
+{
+    "b21": [-52.9353294, 47.5177231],
+    "bBB": [-52.9379311, 47.5386467],
+    "b42": [-52.9595337, 47.5173874]
+}
+```
+
+A flat dictionary mapping vehicle IDs to `[longitude, latitude]` arrays.
+
+**This is extremely minimal:**
+- No timestamps
+- No speed or bearing
+- No vehicle names or types
+- No is_driving indicator
+- Just ID and coordinates
+
+### Data Limitations
+
+| Field | Available | Workaround |
+|-------|-----------|------------|
+| Timestamp | No | Use `collected_at` from poll time |
+| Speed | No | None (could derive from position delta) |
+| Bearing | No | None (could derive from position delta) |
+| Vehicle name | No | Use vehicle ID as description |
+| Vehicle type | No | Assume "SA PLOW TRUCK" (only snow plow category) |
+| is_driving | No | None |
+
+## Polling Characteristics
+
+- Config `timeDelay`: 15 (seconds)
+- Configured poll interval: **15 seconds**
+- Server-side data update rate: unknown (positions were static during
+  late-night testing, likely updates when plows are active)
+- Signed URLs expire after **30 minutes** -- a new one is requested
+  every poll (cheap GET, no auth)
+- Vehicle count: **3 observed** (Feb 2026, late night)
+- No authentication required for any step
+
+## Config Details (from /config/equipment-tracker-cbs)
+
+| Field | Value |
+|-------|-------|
+| `cacheLocation` | `"Canada"` |
+| `publicURL` | `"equipment-tracker-cbs"` |
+| `timeDelay` | `15` |
+| `viewState.latitude` | `47.512` |
+| `viewState.longitude` | `-52.976` |
+| `viewState.zoom` | `12.07` |
+| `hideVehicles.hideStoppedVehicles` | `true` |
+| `hideVehicles.hideOffRouteVehicles` | `true` |
+| `published` | `true` |
+| `lastPublishedDate` | `"2025-02-06T13:00:13.260Z"` |
+
+Note: `hideStoppedVehicles` is a frontend-only filter. The API still
+returns all vehicles regardless of movement state.
+
+## Implementation
+
+**Implemented** as source `cbs` with parser `geotab`.
+
+The `api_url` is set to the full `urlForFileFromBucket` endpoint for the
+vehicle-locations file. The `fetch_source` function detects the `geotab`
+parser and performs the two-step fetch (get signed URL, then fetch data).
+
+Files changed:
+- `src/where_the_plow/client.py` -- `parse_geotab_response()` + two-step
+  fetch in `fetch_source()`
+- `src/where_the_plow/source_config.py` -- `cbs` entry in `build_sources()`
+- `src/where_the_plow/config.py` -- `cbs_api_url`, `source_cbs_enabled`,
+  `source_cbs_poll_interval`
+- `src/where_the_plow/collector.py` -- `geotab` parser dispatch
+- `tests/test_client.py` -- parser tests
+- `tests/test_collector.py` -- `process_poll` + `fetch_source` two-step test
+
+## Brittleness Concerns
+
+The main fragility risk is the **file path** containing hardcoded IDs:
+
+```
+equipment-tracker-cbs-lp038h1u-b27A7-vehicle-locations.json
+```
+
+If CBS reconfigures their Geotab deployment, the `serviceCategoryId`
+(`lp038h1u`) or `serviceGroupId` (`b27A7`) could change. However:
+
+1. The `/config/equipment-tracker-cbs` endpoint returns these IDs
+   dynamically, so a more resilient implementation could fetch the config
+   on startup and derive the file path.
+2. In practice, these IDs appear stable -- `lastPublishedDate` is from
+   Feb 2025, suggesting the config doesn't change often.
+3. The `api_url` is configurable via the `CBS_API_URL` env var, so the
+   path can be updated without a code change.
+
+## Reusability
+
+The Geotab Citizen Insights platform is used by multiple municipalities
+across Canada. The same two-step fetch pattern would work for any
+deployment -- only the `publicURL` slug and category/group IDs change.
+The `/config/{slug}` endpoint provides all needed IDs programmatically.
+
+## Map Center
+
+- Center: (-52.98, 47.51)
 - Zoom: 12
 - Coverage: Town of Conception Bay South
-
-## Notes for Future Research
-
-- The Geotab platform appears to be used by multiple municipalities
-  across Canada. If someone cracks the API for one Citizen Insights
-  deployment, it likely works for all of them.
-- The `equipment-tracker-cbs` route slug suggests there may be other
-  equipment tracker deployments (search for other municipalities using
-  Citizen Insights).
-- Paradise's tracker at hitechmaps.com also appears to use Geotab on the
-  backend (the frontend references Geotab-style fields), which suggests
-  HitechMaps may be a Geotab reseller/integrator.
