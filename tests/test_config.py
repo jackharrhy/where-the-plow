@@ -9,9 +9,11 @@ def test_default_settings():
     assert s.source_mt_pearl_poll_interval == 30
     assert s.source_provincial_poll_interval == 30
     assert s.source_paradise_poll_interval == 10
+    assert s.source_cbs_poll_interval == 15
     assert s.log_level == "INFO"
     assert "MapServer" in s.avl_api_url
     assert "hitechmaps.com" in s.paradise_api_url
+    assert "citizeninsights.geotab.com" in s.cbs_api_url
 
 
 def test_settings_from_env(monkeypatch):
@@ -49,6 +51,7 @@ def test_sources_registry_has_required_sources():
     assert "mt_pearl" in SOURCES
     assert "provincial" in SOURCES
     assert "paradise" in SOURCES
+    assert "cbs" in SOURCES
 
 
 def test_source_config_has_required_fields():
@@ -59,7 +62,7 @@ def test_source_config_has_required_fields():
         assert src.poll_interval > 0
         assert len(src.center) == 2
         assert src.zoom > 0
-        assert src.parser in ("avl", "aatracking", "hitechmaps")
+        assert src.parser in ("avl", "aatracking", "hitechmaps", "geotab")
         assert src.min_coverage_zoom >= 0
 
 
@@ -83,6 +86,7 @@ def test_source_min_coverage_zoom():
     assert SOURCES["mt_pearl"].min_coverage_zoom == 10
     assert SOURCES["provincial"].min_coverage_zoom == 0
     assert SOURCES["paradise"].min_coverage_zoom == 10
+    assert SOURCES["cbs"].min_coverage_zoom == 10
 
 
 def test_build_sources_respects_disabled(monkeypatch):

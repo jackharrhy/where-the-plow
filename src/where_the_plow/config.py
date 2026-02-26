@@ -22,18 +22,24 @@ class Settings(BaseSettings):
         "https://gps5.aatracking.com/api/NewfoundlandPortal/GetPlows"
     )
     paradise_api_url: str = "https://hitechmaps.com/townparadise/db.php"
+    cbs_api_url: str = (
+        "https://citizeninsights.geotab.com/urlForFileFromBucket/Canada/"
+        "equipment-tracker-cbs-lp038h1u-b27A7-vehicle-locations.json"
+    )
 
     # Source enable/disable
     source_st_johns_enabled: bool = True
     source_mt_pearl_enabled: bool = True
     source_provincial_enabled: bool = True
     source_paradise_enabled: bool = True
+    source_cbs_enabled: bool = True
 
     # Source poll intervals (seconds)
     source_st_johns_poll_interval: int = 6
     source_mt_pearl_poll_interval: int = 30
     source_provincial_poll_interval: int = 30
     source_paradise_poll_interval: int = 10
+    source_cbs_poll_interval: int = 15
 
 
 settings = Settings()

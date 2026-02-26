@@ -67,4 +67,15 @@ def build_sources(settings) -> dict[str, SourceConfig]:
             enabled=settings.source_paradise_enabled,
             min_coverage_zoom=10,
         ),
+        "cbs": SourceConfig(
+            name="cbs",
+            display_name="Conception Bay South",
+            api_url=settings.cbs_api_url,
+            poll_interval=settings.source_cbs_poll_interval,
+            center=(-52.98, 47.51),
+            zoom=12,
+            parser="geotab",
+            enabled=settings.source_cbs_enabled,
+            min_coverage_zoom=10,
+        ),
     }

@@ -58,6 +58,11 @@ SAMPLE_HITECHMAPS_RESPONSE = [
     }
 ]
 
+SAMPLE_GEOTAB_RESPONSE = {
+    "b21": [-52.9353294, 47.5177231],
+    "bBB": [-52.9379311, 47.5386467],
+}
+
 
 def make_db():
     fd, path = tempfile.mkstemp(suffix=".db")
@@ -104,6 +109,18 @@ def test_process_poll_hitechmaps():
         "SELECT source FROM positions WHERE vehicle_id='b3C'"
     ).fetchone()
     assert row[0] == "paradise"
+    db.close()
+    os.unlink(path)
+
+
+def test_process_poll_geotab():
+    db, path = make_db()
+    inserted = process_poll(db, SAMPLE_GEOTAB_RESPONSE, source="cbs", parser="geotab")
+    assert inserted == 2
+    row = db.conn.execute(
+        "SELECT source FROM positions WHERE vehicle_id='b21'"
+    ).fetchone()
+    assert row[0] == "cbs"
     db.close()
     os.unlink(path)
 
@@ -393,3 +410,38 @@ async def test_fetch_source_avl_sends_referer():
     # No token should be present in params
     assert "token" not in call_kwargs.kwargs["params"]
     assert result == {"features": []}
+
+
+async def test_fetch_source_geotab_two_step():
+    """Geotab sources should follow the signed URL redirect."""
+    config = _test_source_config(
+        parser="geotab",
+        api_url="https://citizeninsights.geotab.com/urlForFileFromBucket/Canada/test.json",
+    )
+
+    signed_url = "https://storage.googleapis.com/bucket/test.json?sig=abc"
+    vehicle_data = {"b21": [-52.93, 47.51]}
+
+    # First call returns the signed URL, second call returns vehicle data
+    step1_response = httpx.Response(
+        200,
+        json={"url": signed_url},
+        request=httpx.Request("GET", config.api_url),
+    )
+    step2_response = httpx.Response(
+        200,
+        json=vehicle_data,
+        request=httpx.Request("GET", signed_url),
+    )
+
+    client = AsyncMock(spec=httpx.AsyncClient)
+    client.get = AsyncMock(side_effect=[step1_response, step2_response])
+
+    result = await fetch_source(client, config)
+
+    assert result == vehicle_data
+    assert client.get.call_count == 2
+    # First call should be to the urlForFileFromBucket endpoint
+    assert client.get.call_args_list[0].args[0] == config.api_url
+    # Second call should be to the signed URL
+    assert client.get.call_args_list[1].args[0] == signed_url
