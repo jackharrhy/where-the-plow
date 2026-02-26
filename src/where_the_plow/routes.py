@@ -47,14 +47,14 @@ _search_limiter = RateLimiter(
 _COVERAGE_TTL = 5 * 60  # 5 minutes — matches frontend rounding interval
 _COVERAGE_MAX = 20  # max entries before evicting oldest
 
-# key = (since_iso, until_iso, source|None)  ->  (expires_at_monotonic, trails)
+# key = (since_iso, until_iso, source|None, bbox|None)  ->  (expires_at_monotonic, trails)
 _coverage_cache: dict[tuple, tuple[float, list[dict]]] = {}
 
 
 def _coverage_cache_get(
-    since: datetime, until: datetime, source: str | None
+    since: datetime, until: datetime, source: str | None, bbox: str | None = None
 ) -> list[dict] | None:
-    key = (since.isoformat(), until.isoformat(), source)
+    key = (since.isoformat(), until.isoformat(), source, bbox)
     entry = _coverage_cache.get(key)
     if entry is None:
         return None
@@ -66,9 +66,13 @@ def _coverage_cache_get(
 
 
 def _coverage_cache_put(
-    since: datetime, until: datetime, source: str | None, trails: list[dict]
+    since: datetime,
+    until: datetime,
+    source: str | None,
+    trails: list[dict],
+    bbox: str | None = None,
 ) -> None:
-    key = (since.isoformat(), until.isoformat(), source)
+    key = (since.isoformat(), until.isoformat(), source, bbox)
     # Evict oldest if full
     if len(_coverage_cache) >= _COVERAGE_MAX and key not in _coverage_cache:
         oldest_key = min(_coverage_cache, key=lambda k: _coverage_cache[k][0])
@@ -360,6 +364,10 @@ def get_coverage(
         None,
         description="Filter by data source (e.g. 'st_johns', 'mt_pearl', 'provincial')",
     ),
+    bbox: str | None = Query(
+        None,
+        description="Bounding box filter: west,south,east,north (e.g. '-52.8,47.5,-52.7,47.6')",
+    ),
 ):
     db = request.app.state.db
     now = datetime.now(timezone.utc)
@@ -368,21 +376,41 @@ def get_coverage(
     if until is None:
         until = now
 
+    bbox_tuple = None
+    if bbox is not None:
+        try:
+            parts = [float(x) for x in bbox.split(",")]
+            if len(parts) != 4:
+                raise ValueError
+            if parts[0] >= parts[2] or parts[1] >= parts[3]:
+                raise ValueError
+            bbox_tuple = tuple(parts)
+        except ValueError:
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "detail": "bbox must be 4 comma-separated floats: west,south,east,north"
+                },
+            )
+
     # 1. In-memory cache (short TTL, works for recent/live queries)
-    trails = _coverage_cache_get(since, until, source)
+    trails = _coverage_cache_get(since, until, source, bbox)
     if trails is None:
-        # 2. File cache (historical queries only, no source filter)
-        if source is None:
+        # 2. File cache (historical queries only, no source/bbox filter)
+        if source is None and bbox is None:
             trails = cache.get(since, until)
         if trails is None:
             trails = db.get_coverage_trails(
-                since=since, until=until, **({"source": source} if source else {})
+                since=since,
+                until=until,
+                **({"source": source} if source else {}),
+                **({"bbox": bbox_tuple} if bbox_tuple else {}),
             )
-            # Populate file cache for historical queries
-            if source is None:
+            # Populate file cache for historical queries (unfiltered only)
+            if source is None and bbox is None:
                 cache.put(since, until, trails)
         # Populate in-memory cache for all queries
-        _coverage_cache_put(since, until, source, trails)
+        _coverage_cache_put(since, until, source, trails, bbox)
 
     features = [
         CoverageFeature(

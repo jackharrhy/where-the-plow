@@ -68,10 +68,17 @@
             rel="stylesheet"
             href="https://unpkg.com/nouislider@15/dist/nouislider.min.css"
         />
+        <link rel="stylesheet" href="https://unpkg.com/@mapbox/mapbox-gl-draw@1/dist/mapbox-gl-draw.css" />
         <link rel="stylesheet" href="/static/style.css" />
         <script src="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.js"></script>
         <script src="https://unpkg.com/deck.gl@^9.0.0/dist.min.js"></script>
         <script src="https://unpkg.com/nouislider@15/dist/nouislider.min.js"></script>
+        <script src="https://unpkg.com/@mapbox/mapbox-gl-draw@1/dist/mapbox-gl-draw.js"></script>
+        <script type="module" id="mediabunny-loader">
+            import { Output, Mp4OutputFormat, BufferTarget, CanvasSource } from 'https://esm.sh/mediabunny@0';
+            window.Mediabunny = { Output, Mp4OutputFormat, BufferTarget, CanvasSource };
+            window.dispatchEvent(new Event('mediabunny-ready'));
+        </script>
     </head>
     <body>
         <div id="map"></div>
@@ -131,6 +138,7 @@
                     <button id="btn-lines" class="active">Lines</button>
                     <button id="btn-heatmap">Heatmap</button>
                 </div>
+                <button id="btn-export-mode" class="export-toggle-btn" style="display: none">Export Region</button>
                 <div class="coverage-hint">
                     Drag the handles to narrow the visible time range
                 </div>
@@ -158,6 +166,44 @@
                     </div>
                 </div>
                 <div id="coverage-loading">Loading coverage data...</div>
+                <div id="export-panel" style="display: none">
+                    <div class="coverage-hint export-section-title">
+                        Export Region Video
+                    </div>
+                    <div id="export-draw-controls" class="export-row">
+                        <button id="btn-draw-polygon" title="Draw polygon on map">Draw Region</button>
+                        <button id="btn-draw-clear" title="Clear drawing" disabled>Clear</button>
+                    </div>
+                    <div id="export-date-range" class="export-row">
+                        <label>From</label>
+                        <input type="date" id="export-date-start" />
+                        <label>To</label>
+                        <input type="date" id="export-date-end" />
+                    </div>
+                    <div id="export-speed-row" class="export-row">
+                        <label>Video duration</label>
+                        <select id="export-speed">
+                            <option value="15">15s</option>
+                            <option value="30" selected>30s</option>
+                            <option value="60">1m</option>
+                        </select>
+                    </div>
+                    <div id="export-actions" class="export-row">
+                        <button id="btn-export-preview" disabled>Preview</button>
+                        <button id="btn-export-record" disabled>Export MP4</button>
+                        <button id="btn-export-link" disabled>Copy Link</button>
+                    </div>
+                    <div id="export-progress" style="display: none">
+                        <div id="export-progress-bar">
+                            <div id="export-progress-fill"></div>
+                        </div>
+                        <span id="export-progress-text">Encoding...</span>
+                        <button id="btn-export-cancel">Cancel</button>
+                    </div>
+                    <div id="export-unsupported" style="display: none">
+                        Video export requires a Chromium-based browser (Chrome, Edge) or Safari 16.4+.
+                    </div>
+                </div>
             </div>
             <div id="legend">
                 <div id="legend-header">

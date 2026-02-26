@@ -56,14 +56,14 @@ All geo endpoints return GeoJSON. Full OpenAPI docs at [`/docs`](https://plow.ja
 | `GET /vehicles` | Latest position for every vehicle (with mini-trails) |
 | `GET /vehicles/nearby?lat=&lng=&radius=` | Vehicles within radius (meters) |
 | `GET /vehicles/{id}/history?since=&until=` | Position history for one vehicle |
-| `GET /coverage?since=&until=` | Per-vehicle LineString trails with timestamps |
+| `GET /coverage?since=&until=&bbox=` | Per-vehicle LineString trails with timestamps |
 | `GET /search?q=` | Geocode an address via Nominatim (cached proxy) |
 | `GET /stats` | Collection statistics |
 | `GET /health` | Health check |
 | `POST /track` | Record anonymous viewport focus event |
 | `POST /signup` | Email signup for notifications |
 
-Vehicle and coverage endpoints support a `?source=` query parameter to filter by data source. All GET list endpoints support cursor-based pagination via `limit` and `after` query parameters. Write endpoints (`/track`, `/signup`) are rate-limited per IP.
+Vehicle and coverage endpoints support a `?source=` query parameter to filter by data source. The `/coverage` endpoint also accepts an optional `bbox=west,south,east,north` parameter to restrict results to a bounding box (e.g. `bbox=-52.8,47.5,-52.7,47.6`). All GET list endpoints support cursor-based pagination via `limit` and `after` query parameters. Write endpoints (`/track`, `/signup`) are rate-limited per IP.
 
 ## Database schema
 

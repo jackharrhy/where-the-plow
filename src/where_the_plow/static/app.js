@@ -630,6 +630,42 @@ class PlowMap {
     this.coverageAbort = new AbortController();
     return this.coverageAbort.signal;
   }
+
+  /* ── Draw (Mapbox Draw) ────────────────────────── */
+
+  initDraw() {
+    this.draw = new MapboxDraw({
+      displayControlsDefault: false,
+      controls: {},
+      defaultMode: 'simple_select',
+    });
+    this.map.addControl(this.draw, 'top-left');
+  }
+
+  getDrawnPolygon() {
+    if (!this.draw) return null;
+    const data = this.draw.getAll();
+    if (!data || data.features.length === 0) return null;
+    return data.features[0];
+  }
+
+  clearDraw() {
+    if (this.draw) this.draw.deleteAll();
+  }
+
+  getDrawnBbox() {
+    const feature = this.getDrawnPolygon();
+    if (!feature) return null;
+    const coords = feature.geometry.coordinates[0];
+    let west = Infinity, south = Infinity, east = -Infinity, north = -Infinity;
+    for (const [lng, lat] of coords) {
+      if (lng < west) west = lng;
+      if (lng > east) east = lng;
+      if (lat < south) south = lat;
+      if (lat > north) north = lat;
+    }
+    return [west, south, east, north];
+  }
 }
 
 /* ── Map view persistence ──────────────────────────── */
@@ -663,6 +699,7 @@ const plowMap = new PlowMap("map", {
   style: "https://tiles.openfreemap.org/styles/liberty",
   center: savedView ? savedView.center : [-52.71, 47.56],
   zoom: savedView ? savedView.zoom : 12,
+  preserveDrawingBuffer: true,
 });
 
 const geolocate = new maplibregl.GeolocateControl({
@@ -982,6 +1019,22 @@ legendToggleBtn.addEventListener("click", () => {
   legendToggleBtn.classList.toggle("collapsed", collapsed);
 });
 
+/* ── Replay URL params ─────────────────────────────── */
+
+function parseReplayParams() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('mode') !== 'replay') return null;
+    return {
+        since: params.get('since'),
+        until: params.get('until'),
+        speed: params.get('speed') || '30',
+        center: params.get('center'),
+        zoom: params.get('zoom'),
+        bbox: params.get('bbox'),
+        polygon: params.get('polygon'),
+    };
+}
+
 /* ── PlowApp class ─────────────────────────────────── */
 
 class PlowApp {
@@ -1011,6 +1064,10 @@ class PlowApp {
     this.coveragePreset = "24";
     this.coverageView = "lines";
 
+    // Export
+    this.exportMode = false;
+    this._exportBbox = null;
+
     // Playback
     this.playback = {
       playing: false,
@@ -1021,6 +1078,14 @@ class PlowApp {
       startTime: null,
       animFrame: null,
       lastRenderTime: 0,
+    };
+
+    // Recording
+    this.recording = {
+      active: false,
+      cancelled: false,
+      output: null,
+      videoSource: null,
     };
   }
 
@@ -1408,6 +1473,8 @@ class PlowApp {
     document.getElementById("vehicle-count").style.display = "";
     document.getElementById("db-size").style.display = "none";
     vehicleHint.style.display = "";
+    document.getElementById('btn-export-mode').style.display = 'none';
+    if (this.exportMode) this.exitExportMode();
     showLegend("vehicles");
     this.startAutoRefresh();
   }
@@ -1425,6 +1492,7 @@ class PlowApp {
     document.getElementById("db-size").style.display = "";
     vehicleHint.style.display = "none";
     coveragePanelEl.style.display = "block";
+    document.getElementById('btn-export-mode').style.display = 'block';
     btnPlay.disabled = true;
 
     this.coveragePreset = "24";
@@ -1450,10 +1518,11 @@ class PlowApp {
     timeSliderEl.noUiSlider.set([0, 1000]);
     this.map.clearCoverage();
     try {
-      const resp = await fetch(
-        `/coverage?since=${since.toISOString()}&until=${until.toISOString()}`,
-        { signal },
-      );
+      let url = `/coverage?since=${since.toISOString()}&until=${until.toISOString()}`;
+      if (this._exportBbox) {
+        url += `&bbox=${this._exportBbox}`;
+      }
+      const resp = await fetch(url, { signal });
       this.coverageData = await resp.json();
       // Pre-parse timestamp strings to epoch ms (once, not per frame)
       const baseTime = since.getTime();
@@ -1731,6 +1800,268 @@ class PlowApp {
       { type: "FeatureCollection", features: buildTrailSegments(features) },
     );
   }
+
+  /* ── Export mode ────────────────────────────────── */
+
+  enterExportMode() {
+    if (window.innerWidth < 768) {
+      alert('Video export works best on desktop. Please use a larger screen.');
+      return;
+    }
+    this.exportMode = true;
+    this.map.initDraw();
+    document.getElementById('export-panel').style.display = 'block';
+    document.getElementById('btn-export-mode').textContent = 'Exit Export';
+
+    // Set date picker bounds
+    const startInput = document.getElementById('export-date-start');
+    const endInput = document.getElementById('export-date-end');
+    if (coverageDateInput.min) startInput.min = coverageDateInput.min;
+    if (coverageDateInput.max) endInput.max = coverageDateInput.max;
+    startInput.max = coverageDateInput.max;
+    endInput.min = startInput.min;
+
+    // Default: last 3 days
+    const now = new Date();
+    const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+    endInput.value = now.toISOString().slice(0, 10);
+    startInput.value = threeDaysAgo.toISOString().slice(0, 10);
+
+    // Check WebCodecs support
+    if (typeof VideoEncoder === 'undefined') {
+      document.getElementById('export-unsupported').style.display = 'block';
+      document.getElementById('btn-export-record').disabled = true;
+    }
+
+    this.updateExportButtons();
+  }
+
+  exitExportMode() {
+    this.exportMode = false;
+    this._exportBbox = null;
+    this.map.clearDraw();
+    if (this.map.draw) {
+      this.map.map.removeControl(this.map.draw);
+      this.map.draw = null;
+    }
+    document.getElementById('export-panel').style.display = 'none';
+    document.getElementById('btn-export-mode').textContent = 'Export Region';
+    document.getElementById('export-unsupported').style.display = 'none';
+  }
+
+  async previewExport() {
+    const bbox = this.map.getDrawnBbox();
+    if (!bbox) return;
+    const startDate = document.getElementById('export-date-start').value;
+    const endDate = document.getElementById('export-date-end').value;
+    if (!startDate || !endDate) return;
+
+    const since = new Date(startDate + 'T00:00:00');
+    const until = new Date(endDate + 'T23:59:59');
+    const bboxParam = bbox.join(',');
+
+    // Store bbox for the fetch
+    this._exportBbox = bboxParam;
+
+    gtag('event', 'export_preview', { bbox: this._exportBbox });
+    await this.loadCoverageForRange(since, until);
+
+    // Fit map to drawn region
+    const [west, south, east, north] = bbox;
+    this.map.map.fitBounds([[west, south], [east, north]], { padding: 50 });
+  }
+
+  updateExportButtons() {
+    const hasPolygon = this.map.getDrawnPolygon() !== null;
+    const startDate = document.getElementById('export-date-start').value;
+    const endDate = document.getElementById('export-date-end').value;
+    const hasDates = startDate && endDate && startDate <= endDate;
+    const ready = hasPolygon && hasDates;
+
+    document.getElementById('btn-draw-clear').disabled = !hasPolygon;
+    document.getElementById('btn-export-preview').disabled = !ready;
+    document.getElementById('btn-export-link').disabled = !ready;
+
+    const hasWebCodecs = typeof VideoEncoder !== 'undefined';
+    document.getElementById('btn-export-record').disabled = !(ready && hasWebCodecs);
+  }
+
+  generateShareLink() {
+    gtag('event', 'export_share_link');
+    const bbox = this.map.getDrawnBbox();
+    const startDate = document.getElementById('export-date-start').value;
+    const endDate = document.getElementById('export-date-end').value;
+    const speed = document.getElementById('export-speed').value;
+    const center = this.map.map.getCenter();
+    const zoom = this.map.map.getZoom().toFixed(2);
+
+    const params = new URLSearchParams({
+      mode: 'replay',
+      since: startDate,
+      until: endDate,
+      speed: speed,
+      center: `${center.lat.toFixed(4)},${center.lng.toFixed(4)}`,
+      zoom: zoom,
+    });
+    if (bbox) {
+      params.set('bbox', bbox.map(v => v.toFixed(6)).join(','));
+    }
+    const polygon = this.map.getDrawnPolygon();
+    if (polygon) {
+      params.set('polygon', JSON.stringify(polygon.geometry.coordinates[0]));
+    }
+
+    return `${window.location.origin}/?${params.toString()}`;
+  }
+
+  /* ── Recording ──────────────────────────────────── */
+
+  async startRecording() {
+    if (!window.Mediabunny) {
+      alert('Mediabunny not loaded yet. Please wait a moment and try again.');
+      return;
+    }
+    if (!this.coverageData || !this.deckTrips) {
+      alert('Load a preview first before recording.');
+      return;
+    }
+
+    const { Output, Mp4OutputFormat, BufferTarget, CanvasSource } = window.Mediabunny;
+
+    const mapCanvas = this.map.map.getCanvas();
+    const width = mapCanvas.width;
+    const height = mapCanvas.height;
+
+    // Create compositing canvas
+    const composite = document.createElement('canvas');
+    composite.width = width;
+    composite.height = height;
+    const ctx = composite.getContext('2d');
+
+    const videoSource = new CanvasSource(composite, {
+      codec: 'avc',
+      bitrate: 4_000_000,
+    });
+
+    const output = new Output({
+      format: new Mp4OutputFormat(),
+      target: new BufferTarget(),
+    });
+    output.addVideoTrack(videoSource, { frameRate: 30 });
+
+    this.recording = { active: true, cancelled: false, output, videoSource };
+
+    // UI
+    const progressEl = document.getElementById('export-progress');
+    const progressFill = document.getElementById('export-progress-fill');
+    const progressText = document.getElementById('export-progress-text');
+    const actionsEl = document.getElementById('export-actions');
+    progressEl.style.display = 'flex';
+    actionsEl.style.display = 'none';
+    this.lockPlaybackUI();
+    this.map.map.getContainer().style.pointerEvents = 'none';
+
+    gtag('event', 'export_record_start');
+    await output.start();
+
+    const fps = 30;
+    const durationSec = parseInt(document.getElementById('export-speed').value);
+    const totalFrames = fps * durationSec;
+    const sinceMs = this.coverageSince.getTime();
+    const untilMs = this.coverageUntil.getTime();
+    const rangeMs = untilMs - sinceMs;
+
+    try {
+      for (let i = 0; i < totalFrames; i++) {
+        if (this.recording.cancelled) break;
+
+        const progress = i / totalFrames;
+        const currentTimeMs = sinceMs + progress * rangeMs;
+
+        // Update slider to match
+        const sliderVal = progress * 1000;
+        timeSliderEl.noUiSlider.set([0, sliderVal]);
+
+        // Render coverage at this time
+        this.renderCoverage(0, sliderVal);
+
+        // Wait a frame for WebGL to paint
+        await new Promise(r => requestAnimationFrame(r));
+        // Additional wait for deck.gl async rendering
+        await new Promise(r => setTimeout(r, 50));
+
+        // Composite: map + overlay
+        ctx.drawImage(mapCanvas, 0, 0);
+        this._drawRecordingOverlay(ctx, width, height, new Date(currentTimeMs));
+
+        // Feed frame to encoder
+        const timestamp = i / fps;
+        const duration = 1 / fps;
+        videoSource.add(timestamp, duration);
+
+        // Update progress
+        const pct = Math.round(progress * 100);
+        progressFill.style.width = pct + '%';
+        progressText.textContent = `Encoding: ${pct}%`;
+      }
+
+      if (!this.recording.cancelled) {
+        await output.finalize();
+        gtag('event', 'export_record_complete', { duration_sec: durationSec, frames: totalFrames });
+
+        // Download
+        const blob = new Blob([output.target.buffer], { type: 'video/mp4' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'plow-coverage.mp4';
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        await output.cancel();
+      }
+    } catch (err) {
+      console.error('Recording failed:', err);
+      try { await output.cancel(); } catch (_) {}
+      alert('Recording failed: ' + err.message);
+    }
+
+    // Restore UI
+    this.recording.active = false;
+    progressEl.style.display = 'none';
+    actionsEl.style.display = 'flex';
+    this.map.map.getContainer().style.pointerEvents = '';
+    this.unlockPlaybackUI();
+  }
+
+  cancelRecording() {
+    this.recording.cancelled = true;
+  }
+
+  _drawRecordingOverlay(ctx, width, height, time) {
+    const fontSize = Math.max(14, Math.round(height / 40));
+    ctx.font = `${fontSize}px sans-serif`;
+    ctx.textBaseline = 'bottom';
+
+    // Timestamp — bottom left
+    const timeStr = time.toLocaleString(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+    ctx.shadowColor = 'rgba(0,0,0,0.8)';
+    ctx.shadowBlur = 4;
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'left';
+    ctx.fillText(timeStr, 12, height - 12);
+
+    // Branding — bottom right
+    ctx.textAlign = 'right';
+    ctx.fillText('plow.jackharrhy.dev', width - 12, height - 12);
+
+    // Reset shadow
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+  }
 }
 
 /* ── App init & event wiring ───────────────────────── */
@@ -1840,6 +2171,51 @@ playbackFollowSelect.addEventListener("change", () => {
   app.playback.followVehicleId = playbackFollowSelect.value || null;
 });
 
+// Export mode toggle
+document.getElementById('btn-export-mode').addEventListener('click', () => {
+  if (app.exportMode) {
+    app.exitExportMode();
+  } else {
+    app.enterExportMode();
+  }
+});
+
+// Draw buttons
+document.getElementById('btn-draw-polygon').addEventListener('click', () => {
+  if (app.map.draw) app.map.draw.changeMode('draw_polygon');
+});
+document.getElementById('btn-draw-clear').addEventListener('click', () => {
+  app.map.clearDraw();
+  app.updateExportButtons();
+});
+
+// Export date inputs update button state
+document.getElementById('export-date-start').addEventListener('change', () => app.updateExportButtons());
+document.getElementById('export-date-end').addEventListener('change', () => app.updateExportButtons());
+
+// Export preview
+document.getElementById('btn-export-preview').addEventListener('click', () => {
+  app.previewExport();
+});
+
+// Export share link
+document.getElementById('btn-export-link').addEventListener('click', () => {
+  const url = app.generateShareLink();
+  navigator.clipboard.writeText(url).then(() => {
+    const btn = document.getElementById('btn-export-link');
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = 'Copy Link'; }, 2000);
+  });
+});
+
+// Export recording
+document.getElementById('btn-export-record').addEventListener('click', () => {
+  app.startRecording();
+});
+document.getElementById('btn-export-cancel').addEventListener('click', () => {
+  app.cancelRecording();
+});
+
 // Detail close
 document
   .getElementById("detail-close")
@@ -1851,6 +2227,20 @@ plowMap.on("load", async () => {
   // Initialize deck.gl overlay for coverage rendering
   plowMap.deckOverlay = new deck.MapboxOverlay({ layers: [] });
   plowMap.map.addControl(plowMap.deckOverlay);
+
+  // Listen for Mapbox Draw events
+  plowMap.on('draw.create', () => {
+    // Only allow one polygon at a time
+    const data = plowMap.draw?.getAll();
+    if (data && data.features.length > 1) {
+      const latest = data.features[data.features.length - 1];
+      plowMap.draw.deleteAll();
+      plowMap.draw.add(latest);
+    }
+    app.updateExportButtons();
+  });
+  plowMap.on('draw.update', () => app.updateExportButtons());
+  plowMap.on('draw.delete', () => app.updateExportButtons());
 
   await app.loadSources();
 
@@ -1884,4 +2274,64 @@ plowMap.on("load", async () => {
   });
 
   app.startAutoRefresh();
+
+  // Auto-load replay mode from URL params
+  const replayParams = parseReplayParams();
+  if (replayParams) {
+    // Skip welcome modal
+    document.getElementById('welcome-overlay').style.display = 'none';
+
+    // Switch to coverage mode
+    await app.switchMode('coverage');
+
+    // Set camera
+    if (replayParams.center && replayParams.zoom) {
+      const [lat, lng] = replayParams.center.split(',').map(Number);
+      plowMap.map.jumpTo({ center: [lng, lat], zoom: parseFloat(replayParams.zoom) });
+    }
+
+    // Load coverage with bbox
+    if (replayParams.since && replayParams.until) {
+      const since = new Date(replayParams.since + 'T00:00:00');
+      const until = new Date(replayParams.until + 'T23:59:59');
+      if (replayParams.bbox) {
+        app._exportBbox = replayParams.bbox;
+      }
+      await app.loadCoverageForRange(since, until);
+
+      // Draw polygon outline if provided
+      if (replayParams.polygon && replayParams.polygon.length < 10000) {
+        try {
+          const coords = JSON.parse(replayParams.polygon);
+          if (!Array.isArray(coords) || !coords.every(c => Array.isArray(c) && c.length >= 2)) {
+            throw new Error('Invalid polygon coordinates');
+          }
+          plowMap.map.addSource('replay-polygon', {
+            type: 'geojson',
+            data: {
+              type: 'Feature',
+              geometry: { type: 'Polygon', coordinates: [coords] },
+            },
+          });
+          plowMap.map.addLayer({
+            id: 'replay-polygon-outline',
+            type: 'line',
+            source: 'replay-polygon',
+            paint: {
+              'line-color': '#fff',
+              'line-width': 2,
+              'line-dasharray': [3, 2],
+              'line-opacity': 0.6,
+            },
+          });
+        } catch (e) {
+          console.warn('Failed to parse replay polygon:', e);
+        }
+      }
+
+      // Set playback speed and auto-start
+      playbackSpeedSelect.value = replayParams.speed;
+      app.startPlayback();
+    }
+  }
 });

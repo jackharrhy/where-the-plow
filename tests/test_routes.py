@@ -343,6 +343,50 @@ def test_get_coverage_with_source_filter(test_client):
     assert len(data["features"]) == 0
 
 
+def test_get_coverage_with_bbox_filter(test_client):
+    # v1 positions are around (-52.73 to -52.75, 47.56 to 47.58)
+    # v2 position is at (-52.80, 47.50) — only 1 position so no trail
+    # Bbox around v1 — should return v1's trail
+    resp = test_client.get(
+        "/coverage?since=2026-02-19T00:00:00Z&until=2026-02-20T00:00:00Z"
+        "&bbox=-52.80,47.50,-52.70,47.60"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["type"] == "FeatureCollection"
+    assert len(data["features"]) == 1
+    assert data["features"][0]["properties"]["vehicle_id"] == "v1"
+
+    # Bbox far away — should return empty
+    resp = test_client.get(
+        "/coverage?since=2026-02-19T00:00:00Z&until=2026-02-20T00:00:00Z"
+        "&bbox=-50.00,48.00,-49.00,49.00"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["features"]) == 0
+
+
+def test_get_coverage_with_invalid_bbox(test_client):
+    # Not enough values
+    resp = test_client.get(
+        "/coverage?since=2026-02-19T00:00:00Z&until=2026-02-20T00:00:00Z&bbox=1,2,3"
+    )
+    assert resp.status_code == 422
+
+    # Non-numeric
+    resp = test_client.get(
+        "/coverage?since=2026-02-19T00:00:00Z&until=2026-02-20T00:00:00Z&bbox=bad"
+    )
+    assert resp.status_code == 422
+
+    # Too many values
+    resp = test_client.get(
+        "/coverage?since=2026-02-19T00:00:00Z&until=2026-02-20T00:00:00Z&bbox=1,2,3,4,5"
+    )
+    assert resp.status_code == 422
+
+
 def test_openapi_spec(test_client):
     resp = test_client.get("/openapi.json")
     assert resp.status_code == 200
