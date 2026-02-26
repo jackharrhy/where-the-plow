@@ -1803,6 +1803,10 @@ class PlowApp {
   /* ── Export mode ────────────────────────────────── */
 
   enterExportMode() {
+    if (window.innerWidth < 768) {
+      alert('Video export works best on desktop. Please use a larger screen.');
+      return;
+    }
     this.exportMode = true;
     this.map.initDraw();
     document.getElementById('export-panel').style.display = 'block';
@@ -1859,6 +1863,7 @@ class PlowApp {
     // Store bbox for the fetch
     this._exportBbox = bboxParam;
 
+    gtag('event', 'export_preview', { bbox: this._exportBbox });
     await this.loadCoverageForRange(since, until);
 
     // Fit map to drawn region
@@ -1882,6 +1887,7 @@ class PlowApp {
   }
 
   generateShareLink() {
+    gtag('event', 'export_share_link');
     const bbox = this.map.getDrawnBbox();
     const startDate = document.getElementById('export-date-start').value;
     const endDate = document.getElementById('export-date-end').value;
@@ -1953,7 +1959,9 @@ class PlowApp {
     progressEl.style.display = 'flex';
     actionsEl.style.display = 'none';
     this.lockPlaybackUI();
+    this.map.map.getContainer().style.pointerEvents = 'none';
 
+    gtag('event', 'export_record_start');
     await output.start();
 
     const fps = 30;
@@ -1999,6 +2007,7 @@ class PlowApp {
 
       if (!this.recording.cancelled) {
         await output.finalize();
+        gtag('event', 'export_record_complete', { duration_sec: durationSec, frames: totalFrames });
 
         // Download
         const blob = new Blob([output.target.buffer], { type: 'video/mp4' });
@@ -2021,6 +2030,7 @@ class PlowApp {
     this.recording.active = false;
     progressEl.style.display = 'none';
     actionsEl.style.display = 'flex';
+    this.map.map.getContainer().style.pointerEvents = '';
     this.unlockPlaybackUI();
   }
 
