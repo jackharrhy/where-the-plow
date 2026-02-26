@@ -368,6 +368,152 @@ body.controls-left .maplibregl-ctrl-bottom-right .maplibregl-ctrl {
     display: none;
 }
 
+/* ── Export panel ───────────────────────────────────── */
+
+.export-toggle-btn {
+    width: 100%;
+    padding: 6px 10px;
+    margin: 6px 0;
+    background: var(--color-accent);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+}
+.export-toggle-btn:hover {
+    opacity: 0.9;
+}
+
+#export-panel {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: var(--border-subtle);
+}
+
+.export-section-title {
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.export-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+}
+
+.export-row label {
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+}
+
+.export-row input[type="date"] {
+    flex: 1;
+    min-width: 0;
+    background: var(--color-input-bg);
+    color: var(--color-text);
+    border: var(--border-subtle);
+    border-radius: 3px;
+    padding: 3px 4px;
+    font-size: 0.75rem;
+}
+
+.export-row select {
+    flex: 1;
+    background: var(--color-input-bg);
+    color: var(--color-text);
+    border: var(--border-subtle);
+    border-radius: 3px;
+    padding: 3px 4px;
+    font-size: 0.75rem;
+}
+
+#export-draw-controls button {
+    flex: 1;
+    padding: 4px 8px;
+    background: var(--color-input-bg);
+    color: var(--color-text);
+    border: var(--border-subtle);
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.75rem;
+}
+#export-draw-controls button:hover:not(:disabled) {
+    background: var(--color-hover-bg);
+}
+#export-draw-controls button:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+#export-actions button {
+    flex: 1;
+    padding: 5px 8px;
+    border: var(--border-subtle);
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    background: var(--color-input-bg);
+    color: var(--color-text);
+}
+#export-actions button:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+#btn-export-record {
+    background: var(--color-accent);
+    color: #fff;
+    border-color: var(--color-accent);
+}
+#btn-export-record:disabled {
+    background: var(--color-input-bg);
+    color: var(--color-text);
+    border: var(--border-subtle);
+}
+
+#export-progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+}
+#export-progress-bar {
+    flex: 1;
+    height: 6px;
+    background: var(--color-input-bg);
+    border-radius: 3px;
+    overflow: hidden;
+}
+#export-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--color-accent);
+    transition: width 0.2s;
+}
+#export-progress-text {
+    font-size: 0.7rem;
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+}
+#btn-export-cancel {
+    padding: 2px 8px;
+    background: transparent;
+    color: var(--color-text-muted);
+    border: var(--border-subtle);
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.7rem;
+}
+
+#export-unsupported {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    padding: 4px 0;
+}
+
 /* ── Ko-fi widget ──────────────────────────────────── */
 
 #kofi-container {
