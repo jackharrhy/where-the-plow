@@ -2,7 +2,6 @@
 import asyncio
 import logging
 import time
-from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 
 import httpx
@@ -23,15 +22,22 @@ class RateLimiter:
     def __init__(self, max_hits: int, window_seconds: int):
         self.max_hits = max_hits
         self.window = window_seconds
-        self._hits: dict[str, list[float]] = defaultdict(list)
+        self._hits: dict[str, list[float]] = {}
 
     def is_limited(self, key: str) -> bool:
         now = time.monotonic()
-        bucket = self._hits[key]
-        self._hits[key] = [t for t in bucket if now - t < self.window]
-        if len(self._hits[key]) >= self.max_hits:
+        bucket = self._hits.get(key)
+        if bucket is not None:
+            bucket = [t for t in bucket if now - t < self.window]
+            if not bucket:
+                del self._hits[key]
+                bucket = []
+        else:
+            bucket = []
+        if len(bucket) >= self.max_hits:
             return True
-        self._hits[key].append(now)
+        bucket.append(now)
+        self._hits[key] = bucket
         return False
 
 
@@ -42,37 +48,15 @@ _search_limiter = RateLimiter(
 )  # 6 searches per min per IP
 
 
-# ── Nominatim search proxy with in-memory cache ──────
+# ── Nominatim search proxy ────────────────────────────
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 NOMINATIM_USER_AGENT = (
     "WhereThePlow/1.0 (St. John's snowplow tracker; https://plow.jackharrhy.dev)"
 )
 ST_JOHNS_VIEWBOX = "-52.85,47.45,-52.55,47.65"
-SEARCH_CACHE_TTL = 86400  # 24 hours — addresses don't change often
-SEARCH_CACHE_MAX = 500  # max entries before evicting oldest
 
-_search_cache: dict[str, tuple[float, list[dict]]] = {}  # key -> (expires_at, results)
 _nominatim_last_request: float = 0.0  # monotonic timestamp of last outbound request
-
-
-def _search_cache_get(key: str) -> list[dict] | None:
-    entry = _search_cache.get(key)
-    if entry is None:
-        return None
-    expires_at, results = entry
-    if time.monotonic() > expires_at:
-        del _search_cache[key]
-        return None
-    return results
-
-
-def _search_cache_put(key: str, results: list[dict]) -> None:
-    # Evict oldest entries if cache is full
-    if len(_search_cache) >= SEARCH_CACHE_MAX:
-        oldest_key = min(_search_cache, key=lambda k: _search_cache[k][0])
-        del _search_cache[oldest_key]
-    _search_cache[key] = (time.monotonic() + SEARCH_CACHE_TTL, results)
 
 
 def _client_ip(request: Request) -> str:
@@ -460,7 +444,7 @@ async def search_address(
 
     cache_key = q.strip().lower()
 
-    cached = _search_cache_get(cache_key)
+    cached = cache.search_get(cache_key)
     if cached is not None:
         return JSONResponse(content=cached)
 
@@ -495,7 +479,7 @@ async def search_address(
 
         raw = resp.json()
         results = [_format_search_result(r) for r in raw]
-        _search_cache_put(cache_key, results)
+        cache.search_put(cache_key, results)
         return JSONResponse(content=results)
 
     except httpx.TimeoutException:

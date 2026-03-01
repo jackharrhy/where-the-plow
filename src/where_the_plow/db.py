@@ -12,6 +12,9 @@ class Database:
         self.path = path
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         self.conn = duckdb.connect(path)
+        # Cap memory so DuckDB doesn't claim 80% of system RAM on a small VPS.
+        self.conn.execute("SET memory_limit = '512MB'")
+        self.conn.execute("SET threads = 2")
 
     def _cursor(self) -> duckdb.DuckDBPyConnection:
         """Create a thread-local cursor for safe concurrent access."""
