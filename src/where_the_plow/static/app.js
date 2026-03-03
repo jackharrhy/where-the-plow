@@ -657,10 +657,23 @@ function loadMapView() {
 
 /* ── Map init ──────────────────────────────────────── */
 
+const MAP_STYLE_KEY = "wtp-map-style";
+const LIGHT_STYLE = "https://tiles.openfreemap.org/styles/liberty";
+const DARK_STYLE = "https://tiles.openfreemap.org/styles/dark";
+
+function getMapStyle() {
+  const saved = localStorage.getItem(MAP_STYLE_KEY);
+  return saved === "dark" ? DARK_STYLE : LIGHT_STYLE;
+}
+
+function isMapDark() {
+  return localStorage.getItem(MAP_STYLE_KEY) === "dark";
+}
+
 const savedView = loadMapView();
 
 const plowMap = new PlowMap("map", {
-  style: "https://tiles.openfreemap.org/styles/liberty",
+  style: getMapStyle(),
   center: savedView ? savedView.center : [-52.71, 47.56],
   zoom: savedView ? savedView.zoom : 12,
 });
@@ -1847,10 +1860,21 @@ document
 
 /* ── Map load: sources, layers, handlers ───────────── */
 
-plowMap.on("load", async () => {
-  // Initialize deck.gl overlay for coverage rendering
+function updateMapStyleButtons() {
+  const dark = isMapDark();
+  const lightBtn = document.getElementById("btn-map-light");
+  const darkBtn = document.getElementById("btn-map-dark");
+  if (lightBtn) lightBtn.classList.toggle("active", !dark);
+  if (darkBtn) darkBtn.classList.toggle("active", dark);
+}
+
+async function initMapLayersAfterStyleLoad(reAddGeolocate = false) {
   plowMap.deckOverlay = new deck.MapboxOverlay({ layers: [] });
   plowMap.map.addControl(plowMap.deckOverlay);
+
+  if (reAddGeolocate) {
+    plowMap.map.addControl(geolocate, "bottom-right");
+  }
 
   await app.loadSources();
 
@@ -1883,5 +1907,49 @@ plowMap.on("load", async () => {
     await app.showTrail(p.vehicle_id, p.timestamp);
   });
 
-  app.startAutoRefresh();
+  if (app.mode === "realtime") {
+    app.startAutoRefresh();
+  }
+
+  if (app.mode === "coverage" && app.coverageData) {
+    const vals = timeSliderEl.noUiSlider.get().map(Number);
+    app.renderCoverage(vals[0], vals[1]);
+  }
+
+  if (app.activeVehicleId) {
+    await app.showTrail(app.activeVehicleId, app.activeVehicleTimestamp);
+  }
+}
+
+async function switchMapStyle(dark) {
+  localStorage.setItem(MAP_STYLE_KEY, dark ? "dark" : "light");
+  updateMapStyleButtons();
+
+  const styleUrl = dark ? DARK_STYLE : LIGHT_STYLE;
+  await plowMap.map.setStyle(styleUrl);
+  await initMapLayersAfterStyleLoad(true); // re-add geolocate (setStyle removes it)
+}
+
+plowMap.on("load", async () => {
+  updateMapStyleButtons();
+  await initMapLayersAfterStyleLoad();
 });
+
+const btnMapLight = document.getElementById("btn-map-light");
+const btnMapDark = document.getElementById("btn-map-dark");
+if (btnMapLight) {
+  btnMapLight.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (!isMapDark()) return;
+    if (typeof gtag === "function") gtag("event", "map_style", { style: "light" });
+    switchMapStyle(false);
+  });
+}
+if (btnMapDark) {
+  btnMapDark.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (isMapDark()) return;
+    if (typeof gtag === "function") gtag("event", "map_style", { style: "dark" });
+    switchMapStyle(true);
+  });
+}
