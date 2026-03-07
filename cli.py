@@ -24,8 +24,8 @@ ROOT = Path(__file__).parent
 BACKUPS_DIR = ROOT / "data" / "backups"
 
 PROD_HOST = "jack@jackharrhy.dev"
-PROD_COMPOSE_DIR = "~/cookie-ops/core"
-PROD_DB_PATH = "~/cookie-ops/core/volumes/plow/plow.db"
+PROD_COMPOSE_DIR = "~/infra/hosts/mug"
+PROD_DB_PATH = "~/infra/hosts/mug/volumes/plow/plow.db"
 PROD_SERVICE = "plow"
 
 
