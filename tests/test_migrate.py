@@ -374,7 +374,7 @@ def test_002_migrates_prod_db(tmp_path):
     )
     run_migrations(conn, migrations_dir)
 
-    assert get_version(conn) == 6
+    assert get_version(conn) == 7
 
     # Vehicles should have source column with composite PK
     veh_cols = {
@@ -496,6 +496,6 @@ def test_already_migrated_db_gets_stamped(tmp_path):
     )
     run_migrations(conn, migrations_dir)
 
-    # Should be stamped at version 6 with no errors
-    assert get_version(conn) == 6
+    # Should be stamped at version 7 with no errors
+    assert get_version(conn) == 7
     conn.close()

@@ -21,7 +21,14 @@ def _has_column(conn: duckdb.DuckDBPyConnection, table: str, column: str) -> boo
 
 def upgrade(conn: duckdb.DuckDBPyConnection) -> None:
     if not _has_column(conn, "signups", "name"):
-        conn.execute("CREATE SEQUENCE IF NOT EXISTS signups_mig_seq")
+        # Start the new sequence after the current max id so inserts don't
+        # collide with migrated rows.
+        max_id = conn.execute("SELECT coalesce(max(id), 0) FROM signups").fetchone()[0]
+        start = max_id + 1
+
+        conn.execute(
+            f"CREATE SEQUENCE IF NOT EXISTS signups_mig_seq START WITH {start}"
+        )
         conn.execute("""
             CREATE TABLE signups_new (
                 id              BIGINT DEFAULT nextval('signups_mig_seq') PRIMARY KEY,
