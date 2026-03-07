@@ -142,6 +142,7 @@ const welcomeCloseBtn = document.getElementById("welcome-close");
 const welcomeDismissBtn = document.getElementById("welcome-dismiss");
 const welcomeCtaBtn = document.getElementById("welcome-cta");
 const signupPanel = document.getElementById("welcome-signup");
+const signupName = document.getElementById("signup-name");
 const signupEmail = document.getElementById("signup-email");
 const signupProjects = document.getElementById("signup-projects");
 const signupSH = document.getElementById("signup-siliconharbour");
@@ -183,7 +184,7 @@ welcomeOverlay.addEventListener("click", (e) => {
 welcomeCtaBtn.addEventListener("click", () => {
   welcomeCtaBtn.style.display = "none";
   signupPanel.style.display = "block";
-  signupEmail.focus();
+  signupName.focus();
 });
 
 // Note toggle
@@ -195,6 +196,13 @@ signupNoteToggle.addEventListener("click", () => {
 
 // Submit signup
 signupSubmitBtn.addEventListener("click", async () => {
+  const name = signupName.value.trim();
+  if (!name) {
+    signupStatus.textContent = "Please enter your name.";
+    signupStatus.className = "error";
+    return;
+  }
+
   const email = signupEmail.value.trim();
   if (!email || !email.includes("@")) {
     signupStatus.textContent = "Please enter a valid email address.";
@@ -212,6 +220,7 @@ signupSubmitBtn.addEventListener("click", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         email,
+        name,
         notify_plow: true,
         notify_projects: signupProjects.checked,
         notify_siliconharbour: signupSH.checked,
@@ -228,6 +237,7 @@ signupSubmitBtn.addEventListener("click", async () => {
     signupStatus.textContent =
       "You're signed up! I don't have a newsletter system just yet, but when I do, you'll be the first to know!";
     signupStatus.className = "success";
+    signupName.disabled = true;
     signupEmail.disabled = true;
     signupProjects.disabled = true;
     signupSH.disabled = true;

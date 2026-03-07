@@ -453,6 +453,7 @@ class Database:
     def insert_signup(
         self,
         email: str,
+        name: str,
         ip: str | None = None,
         user_agent: str | None = None,
         notify_plow: bool = False,
@@ -463,11 +464,12 @@ class Database:
         """Record an email signup."""
         self._cursor().execute(
             """
-            INSERT INTO signups (email, ip, user_agent, notify_plow, notify_projects, notify_siliconharbour, note)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO signups (email, name, ip, user_agent, notify_plow, notify_projects, notify_siliconharbour, note)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 email,
+                name,
                 ip,
                 user_agent,
                 notify_plow,

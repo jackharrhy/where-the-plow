@@ -347,6 +347,7 @@ def test_001_fresh_db_creates_tables(tmp_path):
     }
     assert "ip" in su_cols
     assert "user_agent" in su_cols
+    assert "name" in su_cols
 
     conn.close()
 
@@ -373,7 +374,7 @@ def test_002_migrates_prod_db(tmp_path):
     )
     run_migrations(conn, migrations_dir)
 
-    assert get_version(conn) == 2
+    assert get_version(conn) == 3
 
     # Vehicles should have source column with composite PK
     veh_cols = {
@@ -485,7 +486,8 @@ def test_already_migrated_db_gets_stamped(tmp_path):
             notify_plow BOOLEAN NOT NULL DEFAULT FALSE,
             notify_projects BOOLEAN NOT NULL DEFAULT FALSE,
             notify_siliconharbour BOOLEAN NOT NULL DEFAULT FALSE,
-            note VARCHAR
+            note VARCHAR,
+            name VARCHAR NOT NULL DEFAULT ''
         )
     """)
 
@@ -494,6 +496,6 @@ def test_already_migrated_db_gets_stamped(tmp_path):
     )
     run_migrations(conn, migrations_dir)
 
-    # Should be stamped at version 2 with no errors
-    assert get_version(conn) == 2
+    # Should be stamped at version 3 with no errors
+    assert get_version(conn) == 3
     conn.close()

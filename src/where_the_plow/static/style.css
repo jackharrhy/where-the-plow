@@ -949,6 +949,7 @@ body.controls-left .maplibregl-ctrl-bottom-right .maplibregl-ctrl {
     font-size: 12px;
 }
 
+#signup-name,
 #signup-email {
     width: 100%;
     padding: 8px 10px;
@@ -962,6 +963,7 @@ body.controls-left .maplibregl-ctrl-bottom-right .maplibregl-ctrl {
     margin-bottom: 8px;
 }
 
+#signup-name:focus,
 #signup-email:focus {
     outline: none;
     border-color: var(--color-accent);

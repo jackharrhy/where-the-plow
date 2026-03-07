@@ -120,6 +120,7 @@ class StatsResponse(BaseModel):
 
 class SignupRequest(BaseModel):
     email: str = Field(..., description="Email address", min_length=3, max_length=320)
+    name: str = Field(..., description="User's name", min_length=1, max_length=200)
     notify_plow: bool = Field(False, description="Notify when plow visits street")
     notify_projects: bool = Field(False, description="Notify about other projects")
     notify_siliconharbour: bool = Field(

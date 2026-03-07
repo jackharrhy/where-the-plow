@@ -430,6 +430,7 @@ def signup(request: Request, body: SignupRequest):
     db = request.app.state.db
     db.insert_signup(
         email=body.email,
+        name=body.name,
         ip=ip,
         user_agent=user_agent,
         notify_plow=body.notify_plow,

@@ -262,7 +262,7 @@ def signups():
     conn = duckdb.connect(str(db_path), read_only=True)
     rows = conn.execute(
         """
-        SELECT id, timestamp, email, notify_plow, notify_projects,
+        SELECT id, timestamp, name, email, notify_plow, notify_projects,
                notify_siliconharbour, note, ip, user_agent
         FROM signups
         ORDER BY timestamp DESC
@@ -271,6 +271,7 @@ def signups():
     columns = [
         "id",
         "timestamp",
+        "name",
         "email",
         "notify_plow",
         "notify_projects",
@@ -327,10 +328,11 @@ def signups():
                 f"</div>"
             )
 
+        name_str = _esc(r["name"]) if r["name"] else ""
         cards_html.append(f"""\
 <div class="card">
   <div class="card-header">
-    <span class="email">{_esc(r["email"])}</span>
+    <span class="email">{name_str + " &lt;" + _esc(r["email"]) + "&gt;" if name_str else _esc(r["email"])}</span>
     <span class="id">#{r["id"]}</span>
   </div>
   <div class="meta">
