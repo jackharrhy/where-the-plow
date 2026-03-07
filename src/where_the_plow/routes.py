@@ -9,6 +9,7 @@ from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import JSONResponse
 
 from where_the_plow import cache
+from where_the_plow.snapshot import build_realtime_snapshot
 
 log = logging.getLogger(__name__)
 
@@ -202,16 +203,31 @@ def get_vehicles(
         description="Filter by data source (e.g. 'st_johns', 'mt_pearl', 'provincial')",
     ),
 ):
-    # Return cached realtime snapshot if available and no pagination cursor
+    # Return cached realtime snapshot if available and no pagination cursor.
+    # The collector sets dirty flags instead of eagerly rebuilding snapshots,
+    # so we rebuild lazily here only when someone actually requests the data.
     store = getattr(request.app.state, "store", {})
     if after is None and "realtime" in store:
-        snapshots = store["realtime"]
+        dirty = store.get("dirty", {})
+        db = request.app.state.db
+
+        # Rebuild any stale source snapshots before serving
         if source is not None:
-            if source in snapshots:
-                return JSONResponse(content=snapshots[source])
+            if dirty.get(source):
+                store["realtime"][source] = build_realtime_snapshot(db, source=source)
+                dirty[source] = False
+            if source in store["realtime"]:
+                return JSONResponse(content=store["realtime"][source])
             # source not in cache — fall through to DB query
         else:
-            return JSONResponse(content=_merge_realtime_snapshots(snapshots))
+            # Rebuild all dirty sources
+            for src_name, is_dirty in list(dirty.items()):
+                if is_dirty:
+                    store["realtime"][src_name] = build_realtime_snapshot(
+                        db, source=src_name
+                    )
+                    dirty[src_name] = False
+            return JSONResponse(content=_merge_realtime_snapshots(store["realtime"]))
 
     db = request.app.state.db
     rows = db.get_latest_positions(limit=limit, after=after, source=source)

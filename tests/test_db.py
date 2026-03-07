@@ -152,15 +152,16 @@ def test_insert_positions_dedup():
         },
     ]
 
-    inserted = db.insert_positions(positions, now)
-    assert inserted == 1
+    received = db.insert_positions(positions, now)
+    assert received == 1
 
-    # Same data again — should be deduped
-    inserted = db.insert_positions(positions, now)
-    assert inserted == 0
+    # Same data again — deduped at DB level (INSERT OR IGNORE), but
+    # insert_positions returns the number of positions received, not inserted.
+    received = db.insert_positions(positions, now)
+    assert received == 1  # received count, not "new" count
 
     total = db.conn.execute("SELECT count(*) FROM positions").fetchone()[0]
-    assert total == 1
+    assert total == 1  # still only 1 row in the DB
 
     db.close()
     os.unlink(path)

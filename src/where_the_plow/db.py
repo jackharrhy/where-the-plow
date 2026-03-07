@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 import duckdb
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from itertools import groupby
 
 
@@ -33,17 +33,19 @@ class Database:
     def upsert_vehicles(
         self, vehicles: list[dict], now: datetime, source: str = "st_johns"
     ):
+        if not vehicles:
+            return
         cur = self._cursor()
-        for v in vehicles:
-            cur.execute(
-                """
-                INSERT INTO vehicles (vehicle_id, description, vehicle_type, first_seen, last_seen, source)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT (vehicle_id, source) DO UPDATE SET
-                    description = EXCLUDED.description,
-                    vehicle_type = EXCLUDED.vehicle_type,
-                    last_seen = EXCLUDED.last_seen
-            """,
+        cur.executemany(
+            """
+            INSERT INTO vehicles (vehicle_id, description, vehicle_type, first_seen, last_seen, source)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT (vehicle_id, source) DO UPDATE SET
+                description = EXCLUDED.description,
+                vehicle_type = EXCLUDED.vehicle_type,
+                last_seen = EXCLUDED.last_seen
+        """,
+            [
                 [
                     v["vehicle_id"],
                     v["description"],
@@ -51,23 +53,25 @@ class Database:
                     now,
                     now,
                     source,
-                ],
-            )
+                ]
+                for v in vehicles
+            ],
+        )
 
     def insert_positions(
         self, positions: list[dict], collected_at: datetime, source: str = "st_johns"
     ) -> int:
+        """Insert positions, ignoring duplicates.  Returns the number of positions received."""
         if not positions:
             return 0
         cur = self._cursor()
-        count_before = cur.execute("SELECT count(*) FROM positions").fetchone()[0]
-        for p in positions:
-            cur.execute(
-                """
-                INSERT OR IGNORE INTO positions
-                    (vehicle_id, timestamp, collected_at, longitude, latitude, geom, bearing, speed, is_driving, source)
-                VALUES (?, ?, ?, ?, ?, ST_Point(?, ?), ?, ?, ?, ?)
-            """,
+        cur.executemany(
+            """
+            INSERT OR IGNORE INTO positions
+                (vehicle_id, timestamp, collected_at, longitude, latitude, geom, bearing, speed, is_driving, source)
+            VALUES (?, ?, ?, ?, ?, ST_Point(?, ?), ?, ?, ?, ?)
+        """,
+            [
                 [
                     p["vehicle_id"],
                     p["timestamp"],
@@ -80,10 +84,11 @@ class Database:
                     p["speed"],
                     p["is_driving"],
                     source,
-                ],
-            )
-        count_after = cur.execute("SELECT count(*) FROM positions").fetchone()[0]
-        return count_after - count_before
+                ]
+                for p in positions
+            ],
+        )
+        return len(positions)
 
     def get_latest_positions(
         self,
@@ -123,15 +128,25 @@ class Database:
         trail_points: int = 6,
         max_gap_s: int = 120,
         source: str | None = None,
+        recency_minutes: int | None = None,
     ) -> list[dict]:
         """Get the latest position for each vehicle plus a mini-trail of recent coords.
 
         Positions separated by more than max_gap_s seconds are treated as a
         discontinuity — the trail is truncated to only the contiguous segment
         ending at the most recent position.
+
+        When *recency_minutes* is set, only positions from that many minutes
+        ago are considered — this avoids scanning the entire table for the
+        window function.
         """
+        recency_filter = ""
         source_filter = ""
         params: list = [trail_points]
+        if recency_minutes is not None:
+            cutoff = datetime.now(timezone.utc) - timedelta(minutes=recency_minutes)
+            recency_filter = f"AND p.timestamp >= ${len(params) + 1}"
+            params.append(cutoff)
         if source is not None:
             source_filter = f"AND p.source = ${len(params) + 1}"
             params.append(source)
@@ -143,7 +158,9 @@ class Database:
                        ROW_NUMBER() OVER (PARTITION BY p.vehicle_id, p.source ORDER BY p.timestamp DESC) as rn
                 FROM positions p
                 JOIN vehicles v ON p.vehicle_id = v.vehicle_id AND p.source = v.source
-                WHERE 1=1 {source_filter}
+                WHERE 1=1
+                {recency_filter}
+                {source_filter}
             )
             SELECT vehicle_id, timestamp, longitude, latitude, bearing, speed,
                    is_driving, description, vehicle_type, source

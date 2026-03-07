@@ -1,7 +1,7 @@
 # tests/test_snapshot.py
 import os
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from where_the_plow.db import Database
 from where_the_plow.snapshot import build_realtime_snapshot
@@ -20,7 +20,7 @@ def test_snapshot_returns_feature_collection():
     """build_realtime_snapshot returns a valid GeoJSON FeatureCollection."""
     db, path = make_db()
     now = datetime.now(timezone.utc)
-    ts = datetime(2026, 2, 19, 12, 0, 0, tzinfo=timezone.utc)
+    ts = now - timedelta(seconds=30)
 
     db.upsert_vehicles(
         [{"vehicle_id": "v1", "description": "Plow 1", "vehicle_type": "LOADER"}], now
@@ -66,9 +66,9 @@ def test_snapshot_includes_trail():
     """Features include a trail array from the DB method."""
     db, path = make_db()
     now = datetime.now(timezone.utc)
-    ts1 = datetime(2026, 2, 19, 12, 0, 0, tzinfo=timezone.utc)
-    ts2 = datetime(2026, 2, 19, 12, 0, 6, tzinfo=timezone.utc)
-    ts3 = datetime(2026, 2, 19, 12, 0, 12, tzinfo=timezone.utc)
+    ts1 = now - timedelta(seconds=18)
+    ts2 = now - timedelta(seconds=12)
+    ts3 = now - timedelta(seconds=6)
 
     db.upsert_vehicles(
         [{"vehicle_id": "v1", "description": "Plow 1", "vehicle_type": "LOADER"}], now
@@ -137,7 +137,7 @@ def test_snapshot_timestamp_serialized():
     """Timestamps are serialized to ISO strings, not datetime objects."""
     db, path = make_db()
     now = datetime.now(timezone.utc)
-    ts = datetime(2026, 2, 19, 12, 0, 0, tzinfo=timezone.utc)
+    ts = now - timedelta(seconds=30)
 
     db.upsert_vehicles(
         [{"vehicle_id": "v1", "description": "Plow 1", "vehicle_type": "LOADER"}], now
@@ -161,14 +161,11 @@ def test_snapshot_timestamp_serialized():
     ts_val = result["features"][0]["properties"]["timestamp"]
 
     assert isinstance(ts_val, str)
-    assert "2026-02-19" in ts_val
-    # DuckDB may return in local timezone; just verify it parses as the right instant
+    # DuckDB may return in local timezone; just verify it parses as a valid ISO string
     from datetime import datetime as dt
 
     parsed = dt.fromisoformat(ts_val)
-    assert parsed.year == 2026
-    assert parsed.month == 2
-    assert parsed.day == 19
+    assert parsed.year == now.year
 
     db.close()
     os.unlink(path)
@@ -178,8 +175,8 @@ def test_snapshot_multiple_vehicles():
     """Snapshot includes all vehicles, each with their own trail."""
     db, path = make_db()
     now = datetime.now(timezone.utc)
-    ts1 = datetime(2026, 2, 19, 12, 0, 0, tzinfo=timezone.utc)
-    ts2 = datetime(2026, 2, 19, 12, 0, 6, tzinfo=timezone.utc)
+    ts1 = now - timedelta(seconds=12)
+    ts2 = now - timedelta(seconds=6)
 
     db.upsert_vehicles(
         [

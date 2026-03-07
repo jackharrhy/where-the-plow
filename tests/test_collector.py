@@ -127,10 +127,10 @@ def test_process_poll_geotab():
 
 def test_process_poll_deduplicates():
     db, path = make_db()
-    inserted1 = process_poll(db, SAMPLE_AVL_RESPONSE, source="st_johns", parser="avl")
-    inserted2 = process_poll(db, SAMPLE_AVL_RESPONSE, source="st_johns", parser="avl")
-    assert inserted1 == 1
-    assert inserted2 == 0
+    received1 = process_poll(db, SAMPLE_AVL_RESPONSE, source="st_johns", parser="avl")
+    received2 = process_poll(db, SAMPLE_AVL_RESPONSE, source="st_johns", parser="avl")
+    assert received1 == 1
+    assert received2 == 1  # returns received count, duplicates ignored at DB level
     total = db.conn.execute("SELECT count(*) FROM positions").fetchone()[0]
     assert total == 1
     db.close()
@@ -301,7 +301,7 @@ async def test_poll_source_recovers_from_malformed_json():
 
 
 async def test_poll_source_updates_store_on_success():
-    """Successful polls should update store['realtime'][source_name]."""
+    """Successful polls should mark the source dirty for lazy snapshot rebuild."""
     db, path = make_db()
     store = {}
     config = _test_source_config()
@@ -310,11 +310,8 @@ async def test_poll_source_updates_store_on_success():
 
     await _run_poll_cycles(db, store, config, effects)
 
-    assert "realtime" in store
-    assert "test_source" in store["realtime"]
-    snapshot = store["realtime"]["test_source"]
-    assert snapshot["type"] == "FeatureCollection"
-    assert len(snapshot["features"]) == 1
+    assert "dirty" in store
+    assert store["dirty"].get("test_source") is True
 
     db.close()
     os.unlink(path)

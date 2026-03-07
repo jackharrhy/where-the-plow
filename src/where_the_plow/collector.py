@@ -13,7 +13,6 @@ from where_the_plow.client import (
 )
 from where_the_plow.config import SOURCES
 from where_the_plow.db import Database
-from where_the_plow.snapshot import build_realtime_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -56,17 +55,14 @@ async def poll_source(db: Database, store: dict, source_config):
                     db, response, source=source_config.name, parser=source_config.parser
                 )
                 logger.info(
-                    "[%s] %d vehicles seen, %d new positions",
+                    "[%s] %d vehicles seen, %d positions received",
                     source_config.name,
                     count,
                     inserted,
                 )
-                # Update this source's realtime snapshot
-                if "realtime" not in store:
-                    store["realtime"] = {}
-                store["realtime"][source_config.name] = build_realtime_snapshot(
-                    db, source=source_config.name
-                )
+                # Mark this source's snapshot as stale so the next
+                # /vehicles request rebuilds it on demand.
+                store.setdefault("dirty", {})[source_config.name] = True
             except asyncio.CancelledError:
                 logger.info("Collector for %s shutting down", source_config.name)
                 raise
@@ -86,6 +82,7 @@ async def run(db: Database, store: dict):
     )
 
     store["realtime"] = {}
+    store["dirty"] = {}
 
     tasks = []
     for source_config in SOURCES.values():

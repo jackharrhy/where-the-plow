@@ -8,7 +8,9 @@ from where_the_plow.db import Database
 
 def build_realtime_snapshot(db: Database, source: str | None = None) -> dict:
     """Query latest positions with mini-trails and return a GeoJSON FeatureCollection dict."""
-    rows = db.get_latest_positions_with_trails(trail_points=6, source=source)
+    rows = db.get_latest_positions_with_trails(
+        trail_points=6, source=source, recency_minutes=30
+    )
     features = []
     for r in rows:
         ts = r["timestamp"]
