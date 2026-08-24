@@ -419,6 +419,11 @@ class Database:
                 result["latest"] = row[1]
         return result
 
+    def ping(self) -> bool:
+        """Run a constant-time query to verify the database connection."""
+        row = self._cursor().execute("SELECT 1").fetchone()
+        return row == (1,)
+
     def insert_viewport(
         self,
         zoom: float,

@@ -830,15 +830,6 @@ function updateVehicleCount(data) {
   const count = data.features ? data.features.length : 0;
   document.getElementById("vehicle-count").textContent =
     count + " vehicle" + (count !== 1 ? "s" : "") + " tracked";
-  fetch("/stats")
-    .then((r) => r.json())
-    .then((stats) => {
-      if (stats.db_size_bytes) {
-        document.getElementById("db-size").textContent =
-          formatBytes(stats.db_size_bytes) + " of data";
-      }
-    })
-    .catch(() => {});
 }
 
 function filterRecentFeatures(data) {
@@ -975,6 +966,10 @@ async function initDatePickerBounds() {
     const stats = await resp.json();
     if (stats.earliest) {
       coverageDateInput.min = stats.earliest.slice(0, 10);
+    }
+    if (stats.db_size_bytes) {
+      document.getElementById("db-size").textContent =
+        formatBytes(stats.db_size_bytes) + " of data";
     }
     coverageDateInput.max = new Date().toISOString().slice(0, 10);
   } catch (e) {

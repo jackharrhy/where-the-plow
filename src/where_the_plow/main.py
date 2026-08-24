@@ -84,5 +84,5 @@ def root():
 @app.get("/health", tags=["system"])
 def health():
     db: Database = app.state.db
-    stats = db.get_stats()
-    return {"status": "ok", **stats}
+    db.ping()
+    return {"status": "ok"}

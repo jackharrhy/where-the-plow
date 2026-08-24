@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 from where_the_plow.client import fetch_source
-from where_the_plow.collector import poll_source, process_poll
+from where_the_plow.collector import SourceState, poll_source, process_poll
 from where_the_plow.db import Database
 from where_the_plow.source_config import SourceConfig
 
@@ -75,8 +75,8 @@ def make_db():
 
 def test_process_poll_avl():
     db, path = make_db()
-    inserted = process_poll(db, SAMPLE_AVL_RESPONSE, source="st_johns", parser="avl")
-    assert inserted == 1
+    result = process_poll(db, SAMPLE_AVL_RESPONSE, source="st_johns", parser="avl")
+    assert result.positions_changed == 1
     row = db.conn.execute(
         "SELECT source FROM positions WHERE vehicle_id='6819'"
     ).fetchone()
@@ -87,10 +87,10 @@ def test_process_poll_avl():
 
 def test_process_poll_aatracking():
     db, path = make_db()
-    inserted = process_poll(
+    result = process_poll(
         db, SAMPLE_AATRACKING_RESPONSE, source="mt_pearl", parser="aatracking"
     )
-    assert inserted == 1
+    assert result.positions_changed == 1
     row = db.conn.execute(
         "SELECT source FROM positions WHERE vehicle_id='17186'"
     ).fetchone()
@@ -101,10 +101,10 @@ def test_process_poll_aatracking():
 
 def test_process_poll_hitechmaps():
     db, path = make_db()
-    inserted = process_poll(
+    result = process_poll(
         db, SAMPLE_HITECHMAPS_RESPONSE, source="paradise", parser="hitechmaps"
     )
-    assert inserted == 1
+    assert result.positions_changed == 1
     row = db.conn.execute(
         "SELECT source FROM positions WHERE vehicle_id='b3C'"
     ).fetchone()
@@ -115,8 +115,8 @@ def test_process_poll_hitechmaps():
 
 def test_process_poll_geotab():
     db, path = make_db()
-    inserted = process_poll(db, SAMPLE_GEOTAB_RESPONSE, source="cbs", parser="geotab")
-    assert inserted == 2
+    result = process_poll(db, SAMPLE_GEOTAB_RESPONSE, source="cbs", parser="geotab")
+    assert result.positions_changed == 2
     row = db.conn.execute(
         "SELECT source FROM positions WHERE vehicle_id='b21'"
     ).fetchone()
@@ -127,12 +127,48 @@ def test_process_poll_geotab():
 
 def test_process_poll_deduplicates():
     db, path = make_db()
-    received1 = process_poll(db, SAMPLE_AVL_RESPONSE, source="st_johns", parser="avl")
-    received2 = process_poll(db, SAMPLE_AVL_RESPONSE, source="st_johns", parser="avl")
-    assert received1 == 1
-    assert received2 == 1  # returns received count, duplicates ignored at DB level
+    state = SourceState()
+    result1 = process_poll(
+        db, SAMPLE_AVL_RESPONSE, source="st_johns", parser="avl", state=state
+    )
+    result2 = process_poll(
+        db, SAMPLE_AVL_RESPONSE, source="st_johns", parser="avl", state=state
+    )
+    assert result1.positions_received == 1
+    assert result1.positions_changed == 1
+    assert result2.positions_received == 1
+    assert result2.positions_changed == 0
+    assert result2.vehicles_changed == 0
+    assert result2.has_changes is False
     total = db.conn.execute("SELECT count(*) FROM positions").fetchone()[0]
     assert total == 1
+    db.close()
+    os.unlink(path)
+
+
+def test_process_poll_detects_metadata_change_without_position_change():
+    db, path = make_db()
+    state = SourceState()
+    process_poll(db, SAMPLE_AVL_RESPONSE, source="st_johns", parser="avl", state=state)
+    changed_response = {
+        "features": [
+            {
+                **SAMPLE_AVL_RESPONSE["features"][0],
+                "attributes": {
+                    **SAMPLE_AVL_RESPONSE["features"][0]["attributes"],
+                    "VehicleType": "LOADER",
+                },
+            }
+        ]
+    }
+
+    result = process_poll(
+        db, changed_response, source="st_johns", parser="avl", state=state
+    )
+
+    assert result.positions_changed == 0
+    assert result.vehicles_changed == 1
+    assert result.has_changes is True
     db.close()
     os.unlink(path)
 
@@ -179,7 +215,7 @@ def _make_aatracking_response(vehicle_id=17186, heading=90):
     ]
 
 
-async def _run_poll_cycles(db, store, config, side_effects):
+async def _run_poll_cycles(db, store, config, side_effects, after_cycle=None):
     """Run poll_source with mocked fetch_source, cancelling after N cycles.
 
     side_effects: list of (return_value_or_exception) for each poll cycle.
@@ -201,6 +237,8 @@ async def _run_poll_cycles(db, store, config, side_effects):
     original_sleep = asyncio.sleep
 
     async def fake_sleep(seconds):
+        if after_cycle is not None:
+            after_cycle(call_count, store)
         # After each cycle completes (sleep is called at end of loop body),
         # check if we've done enough cycles
         if call_count >= target_cycles:
@@ -313,6 +351,28 @@ async def test_poll_source_updates_store_on_success():
     assert "dirty" in store
     assert store["dirty"].get("test_source") is True
 
+    db.close()
+    os.unlink(path)
+
+
+async def test_poll_source_does_not_redirty_unchanged_source():
+    db, path = make_db()
+    store = {}
+    config = _test_source_config()
+
+    def clear_dirty_after_first_cycle(cycle, current_store):
+        if cycle == 1:
+            current_store["dirty"]["test_source"] = False
+
+    await _run_poll_cycles(
+        db,
+        store,
+        config,
+        [_make_aatracking_response(), _make_aatracking_response()],
+        after_cycle=clear_dirty_after_first_cycle,
+    )
+
+    assert store["dirty"]["test_source"] is False
     db.close()
     os.unlink(path)
 

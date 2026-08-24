@@ -182,6 +182,19 @@ def test_get_stats(test_client):
     assert data["db_size_bytes"] > 0
 
 
+def test_get_stats_is_cached(test_client):
+    db = test_client.app.state.db
+
+    with patch.object(db, "get_stats", wraps=db.get_stats) as get_stats:
+        first = test_client.get("/stats")
+        second = test_client.get("/stats")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json() == second.json()
+    assert get_stats.call_count == 1
+
+
 def test_track_viewport(test_client):
     resp = test_client.post(
         "/track",

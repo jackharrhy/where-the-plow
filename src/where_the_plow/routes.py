@@ -1,6 +1,7 @@
 # src/where_the_plow/routes.py
 import asyncio
 import logging
+import threading
 import time
 from datetime import datetime, timezone, timedelta
 
@@ -9,6 +10,20 @@ from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import JSONResponse
 
 from where_the_plow import cache
+from where_the_plow.models import (
+    CoverageFeature,
+    CoverageFeatureCollection,
+    CoverageProperties,
+    Feature,
+    FeatureCollection,
+    FeatureProperties,
+    LineStringGeometry,
+    Pagination,
+    PointGeometry,
+    SignupRequest,
+    StatsResponse,
+    ViewportTrack,
+)
 from where_the_plow.snapshot import build_realtime_snapshot
 
 log = logging.getLogger(__name__)
@@ -66,25 +81,12 @@ def _client_ip(request: Request) -> str:
     )
 
 
-from where_the_plow.models import (
-    CoverageFeature,
-    CoverageFeatureCollection,
-    CoverageProperties,
-    Feature,
-    FeatureCollection,
-    FeatureProperties,
-    LineStringGeometry,
-    Pagination,
-    PointGeometry,
-    SignupRequest,
-    StatsResponse,
-    ViewportTrack,
-)
-
 router = APIRouter()
 
 DEFAULT_LIMIT = 200
 MAX_LIMIT = 2000
+STATS_CACHE_TTL_SECONDS = 60
+_stats_cache_lock = threading.Lock()
 
 
 def _rows_to_feature_collection(rows: list[dict], limit: int) -> FeatureCollection:
@@ -367,7 +369,25 @@ def get_coverage(
 )
 def get_stats(request: Request):
     db = request.app.state.db
-    stats = db.get_stats()
+    now = time.monotonic()
+    cached = getattr(request.app.state, "stats_cache", None)
+
+    if cached is not None and now < cached[0]:
+        stats = cached[1]
+    else:
+        # Avoid a cache stampede when several clients refresh together.
+        with _stats_cache_lock:
+            cached = getattr(request.app.state, "stats_cache", None)
+            now = time.monotonic()
+            if cached is not None and now < cached[0]:
+                stats = cached[1]
+            else:
+                stats = db.get_stats()
+                request.app.state.stats_cache = (
+                    now + STATS_CACHE_TTL_SECONDS,
+                    stats,
+                )
+
     earliest = stats.get("earliest")
     latest = stats.get("latest")
     return StatsResponse(
