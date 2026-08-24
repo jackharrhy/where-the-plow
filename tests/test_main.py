@@ -41,9 +41,11 @@ def test_client():
 
 
 def test_health(test_client):
-    resp = test_client.get("/health")
+    db = test_client.app.state.db
+
+    with patch.object(db, "ping", wraps=db.ping) as ping:
+        resp = test_client.get("/health")
+
     assert resp.status_code == 200
-    data = resp.json()
-    assert data["status"] == "ok"
-    assert "total_positions" in data
-    assert "total_vehicles" in data
+    assert resp.json() == {"status": "ok"}
+    assert ping.call_count == 1
