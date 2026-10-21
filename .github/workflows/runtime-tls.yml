@@ -1,0 +1,13 @@
+name: Runtime TLS release gate
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  runtime-tls:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build refreshed image and exercise runtime TLS verifiers
+        run: docker build --pull --progress=plain -t tls-release-check .
