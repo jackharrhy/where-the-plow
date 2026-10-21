@@ -414,7 +414,6 @@ name = "where-the-plow"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "certifi" },
     { name = "duckdb" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -433,7 +432,6 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "certifi", specifier = ">=2026.10.19" },
     { name = "duckdb", specifier = ">=1.2" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
