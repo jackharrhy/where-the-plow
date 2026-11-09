@@ -173,6 +173,17 @@ body.controls-left .maplibregl-ctrl-bottom-right .maplibregl-ctrl {
     background: var(--color-hover-bg);
 }
 
+#map-style-toggle {
+    margin: 8px 0 4px;
+    position: relative;
+    z-index: 1;
+}
+
+#map-style-toggle button {
+    padding: 6px 10px;
+    font-size: 12px;
+}
+
 #mode-toggle {
     margin: 8px 0;
 }
